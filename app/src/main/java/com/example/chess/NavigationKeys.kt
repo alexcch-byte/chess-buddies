@@ -22,3 +22,11 @@ data class MatchKey(val game: String, val botId: String?, val playerFirst: Boole
 
 @Serializable
 data object SettingsKey : NavKey
+
+/** Finding a friend's tablet. [game] is a GameKind id: the game the host will play. */
+@Serializable
+data class NearbyKey(val game: String) : NavKey
+
+/** A game against a friend on another tablet. The live connection itself is held by NearbyController. */
+@Serializable
+data object NearbyMatchKey : NavKey

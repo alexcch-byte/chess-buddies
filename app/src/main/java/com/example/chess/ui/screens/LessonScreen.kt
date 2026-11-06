@@ -19,17 +19,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
+import com.example.chess.audio.Narrator
 import com.example.chess.audio.SoundFx
 import com.example.chess.checkers.CheckersLesson
 import com.example.chess.data.GameKind
@@ -49,6 +53,7 @@ import com.example.chess.ui.components.KidScreen
 import com.example.chess.ui.components.KidVictoryBanner
 import com.example.chess.ui.components.Mood
 import com.example.chess.ui.components.PromotionDialog
+import com.example.chess.ui.components.RoundIconButton
 import com.example.chess.ui.components.SirHopsCoachAvatar
 import com.example.chess.ui.components.StarRow
 import com.example.chess.ui.components.TopBar
@@ -108,6 +113,16 @@ fun LessonScreen(
     onBack: () -> Unit,
     board: @Composable (Modifier) -> Unit,
 ) {
+    val narrator = Narrator.get(LocalContext.current)
+    DisposableEffect(session) {
+        narrator.attach(session)
+        onDispose { narrator.detach(session) }
+    }
+    // Everything Sir Hops says in a lesson goes through coachText, so reading that out loud covers the intro pages,
+    // each challenge, hints, mistakes and praise.
+    LaunchedEffect(session.coachText, progress.readAloud) {
+        if (progress.readAloud) narrator.say(session.coachText)
+    }
     KidScreen {
         Column(Modifier.fillMaxSize()) {
             TopBar(session.lesson.title, onBack) {
@@ -153,7 +168,14 @@ private fun SidePanel(
         modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        CoachBubble(s.coachText, mood = s.mood)
+        val narrator = Narrator.get(LocalContext.current)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CoachBubble(s.coachText, mood = s.mood, modifier = Modifier.weight(1f))
+            if (narrator.available) {
+                Spacer(Modifier.width(10.dp))
+                RoundIconButton("🔊", { narrator.say(s.coachText, force = true) }, description = "Listen again")
+            }
+        }
         when (s.phase) {
             LessonPhase.INTRO -> IntroControls(s)
             LessonPhase.PLAYING, LessonPhase.BUSY -> PlayControls(s)

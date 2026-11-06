@@ -1,5 +1,6 @@
 package com.example.chess.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -49,6 +50,7 @@ import com.example.chess.engine.Bot
 import com.example.chess.engine.Coach
 import com.example.chess.engine.Piece
 import com.example.chess.engine.Position
+import com.example.chess.net.NearbySession
 import com.example.chess.theme.Kid
 import com.example.chess.ui.board.BoardDecor
 import com.example.chess.ui.board.CheckerIcon
@@ -69,12 +71,20 @@ import com.example.chess.ui.components.SirHopsCoachAvatar
 import com.example.chess.ui.components.TopBar
 
 @Composable
-fun ChessMatchScreen(bot: Bot?, playerWhite: Boolean, progress: ProgressStore, sound: SoundFx, onBack: () -> Unit) {
+fun ChessMatchScreen(
+    bot: Bot?,
+    playerWhite: Boolean,
+    progress: ProgressStore,
+    sound: SoundFx,
+    onBack: () -> Unit,
+    /** Set to play a friend on another tablet. */
+    nearby: NearbySession? = null,
+) {
     val scope = rememberCoroutineScope()
-    val c = remember(bot, playerWhite) { MatchController(bot, playerWhite, scope, sound, progress) }
+    val c = remember(bot, playerWhite, nearby) { MatchController(bot, playerWhite, scope, sound, progress, nearby) }
     MatchScreen(
         session = c,
-        title = if (bot == null) "Chess with a Friend" else "Chess Practice",
+        title = if (nearby != null) "Chess Nearby" else if (bot == null) "Chess with a Friend" else "Chess Practice",
         onBack = onBack,
         board = { modifier ->
             val pos = c.position
@@ -106,12 +116,20 @@ fun ChessMatchScreen(bot: Bot?, playerWhite: Boolean, progress: ProgressStore, s
 }
 
 @Composable
-fun CheckersMatchScreen(bot: Bot?, playerRed: Boolean, progress: ProgressStore, sound: SoundFx, onBack: () -> Unit) {
+fun CheckersMatchScreen(
+    bot: Bot?,
+    playerRed: Boolean,
+    progress: ProgressStore,
+    sound: SoundFx,
+    onBack: () -> Unit,
+    /** Set to play a friend on another tablet. */
+    nearby: NearbySession? = null,
+) {
     val scope = rememberCoroutineScope()
-    val c = remember(bot, playerRed) { CheckersMatchController(bot, playerRed, scope, sound, progress) }
+    val c = remember(bot, playerRed, nearby) { CheckersMatchController(bot, playerRed, scope, sound, progress, nearby) }
     MatchScreen(
         session = c,
-        title = if (bot == null) "Checkers with a Friend" else "Checkers Practice",
+        title = if (nearby != null) "Checkers Nearby" else if (bot == null) "Checkers with a Friend" else "Checkers Practice",
         onBack = onBack,
         board = { modifier ->
             val pos = c.position
@@ -150,10 +168,15 @@ fun MatchScreen(
     captured: @Composable (firstSide: Boolean) -> Unit,
 ) {
     var confirmNewGame by remember { mutableStateOf(false) }
+    var confirmLeave by remember { mutableStateOf(false) }
+    val nearby = session.nearbySideFirst != null
+    // In a game on two tablets, leaving ends the game for the friend too, so ask first.
+    val leave: () -> Unit = { if (nearby) confirmLeave = true else onBack() }
+    BackHandler(enabled = nearby) { confirmLeave = true }
 
     KidScreen {
         Column(Modifier.fillMaxSize()) {
-            TopBar(title, onBack)
+            TopBar(title, leave)
             BoxWithConstraints(
                 Modifier
                     .fillMaxSize()
@@ -171,7 +194,9 @@ fun MatchScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             PlayerStrip(session, top = true, sideIcon, captured)
+                            ConnectionBanner(session)
                             CoachBubble(session.coachText, mood = session.mood, compact = true)
+                            FriendRequestButtons(session)
                             TakebackButtons(session)
                             Controls(session, onNewGame = { confirmNewGame = true })
                             PlayerStrip(session, top = false, sideIcon, captured)
@@ -189,7 +214,9 @@ fun MatchScreen(
                         PlayerStrip(session, top = true, sideIcon, captured, Modifier.width(boardSize))
                         board(Modifier.size(boardSize))
                         PlayerStrip(session, top = false, sideIcon, captured, Modifier.width(boardSize))
+                        ConnectionBanner(session)
                         CoachBubble(session.coachText, mood = session.mood, compact = true)
+                        FriendRequestButtons(session)
                         TakebackButtons(session)
                         Controls(session, onNewGame = { confirmNewGame = true })
                     }
@@ -201,9 +228,10 @@ fun MatchScreen(
 
     if (confirmNewGame) {
         KidConfirmDialog(
-            title = "Start a new game?",
-            message = "This game will end and a fresh board will be set up.",
-            confirmText = "New game",
+            title = if (nearby) "Play again?" else "Start a new game?",
+            message = if (nearby) "I'll ask your friend. If they say yes, you swap colours and start a fresh board."
+            else "This game will end and a fresh board will be set up.",
+            confirmText = if (nearby) "Ask my friend" else "New game",
             onConfirm = {
                 confirmNewGame = false
                 session.newGame()
@@ -211,7 +239,60 @@ fun MatchScreen(
             onDismiss = { confirmNewGame = false },
         )
     }
+    if (confirmLeave) {
+        KidConfirmDialog(
+            title = "Leave this game?",
+            message = "Your friend will be told that you left.",
+            confirmText = "Leave",
+            dismissText = "Stay",
+            onConfirm = {
+                confirmLeave = false
+                onBack()
+            },
+            onDismiss = { confirmLeave = false },
+        )
+    }
+    if (session.friendLeft) FriendLeftDialog(onBack)
     if (session.showResult) ResultDialog(session, onBack)
+}
+
+@Composable
+private fun ConnectionBanner(s: MatchSession) {
+    val note = s.connectionNote ?: return
+    KidCard(Modifier.fillMaxWidth(), color = Color(0xFFFFF3C4)) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("📡", fontSize = 22.sp)
+            Spacer(Modifier.width(10.dp))
+            Text(note, style = MaterialTheme.typography.bodyMedium, color = Kid.Ink)
+        }
+    }
+}
+
+/** The friend's question (such as "play again?") with its two answers. */
+@Composable
+private fun FriendRequestButtons(s: MatchSession) {
+    val question = s.friendRequest ?: return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(question, style = MaterialTheme.typography.titleMedium, color = Kid.Purple)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            KidButton("Yes!", { s.answerFriendRequest(true) }, emoji = "👍", color = Kid.Green, shade = Kid.GreenDark, small = true)
+            KidButton("Not now", { s.answerFriendRequest(false) }, color = Color(0xFF9A97B0), shade = Color(0xFF77748D), small = true)
+        }
+    }
+}
+
+@Composable
+private fun FriendLeftDialog(onBack: () -> Unit) {
+    Dialog(onDismissRequest = onBack) {
+        KidCard {
+            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("👋", fontSize = 56.sp)
+                Text("Your friend left the game", style = MaterialTheme.typography.headlineSmall, color = Kid.Ink, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+                KidButton("Back to the start", onBack, emoji = "🏠", color = Kid.Purple, shade = Kid.PurpleDark)
+            }
+        }
+    }
 }
 
 /** Name, avatar and captured pieces for one side. The top strip is whoever sits at the far side of the board. */
@@ -227,9 +308,12 @@ private fun PlayerStrip(
     val first = if (top) !bottomIsFirst else bottomIsFirst
     val bot = s.bot
     val isBot = bot != null && first != s.playerFirst
+    // For a friend on another tablet: is this strip the player's own?
+    val mine = s.nearbySideFirst?.let { it == first }
     val name = when {
         isBot -> bot.displayName
         bot != null -> "You"
+        mine != null -> if (mine) "You" else "Your friend"
         else -> if (first) s.firstSideName else s.secondSideName
     }
     val toMove = s.result == null && s.firstSideToMove == first
@@ -250,6 +334,7 @@ private fun PlayerStrip(
                 Text(name, style = MaterialTheme.typography.titleMedium, color = Kid.Ink, maxLines = 1)
                 when {
                     isBot && s.thinking -> ThinkingDots()
+                    toMove && mine == false -> Text("Their turn", style = MaterialTheme.typography.labelMedium, color = Kid.InkSoft)
                     toMove && !isBot -> Text("Your turn!", style = MaterialTheme.typography.labelMedium, color = Kid.Purple)
                     else -> Text(" ", style = MaterialTheme.typography.labelMedium)
                 }
@@ -329,11 +414,13 @@ private fun Controls(s: MatchSession, onNewGame: () -> Unit) {
         if (s.bot != null) {
             KidButton("Hint", s::requestHint, emoji = "💡", color = Kid.Orange, shade = Kid.OrangeDark, small = true, enabled = s.isHumanTurn)
         }
-        KidButton("Undo", s::undo, emoji = "↩️", color = Kid.Blue, shade = Color(0xFF0767B3), small = true, enabled = s.canUndo)
-        if (s.bot == null) {
+        val nearby = s.nearbySideFirst != null
+        // A move can't be taken back on a friend's tablet, and each tablet already faces its own player.
+        if (!nearby) KidButton("Undo", s::undo, emoji = "↩️", color = Kid.Blue, shade = Color(0xFF0767B3), small = true, enabled = s.canUndo)
+        if (s.bot == null && !nearby) {
             KidButton("Flip board", { s.flipped = !s.flipped }, emoji = "🔃", color = Kid.Green, shade = Kid.GreenDark, small = true)
         }
-        KidButton("New game", onNewGame, emoji = "✨", color = Kid.Purple, shade = Kid.PurpleDark, small = true)
+        KidButton(if (nearby) "Play again" else "New game", onNewGame, emoji = "✨", color = Kid.Purple, shade = Kid.PurpleDark, small = true)
     }
 }
 
@@ -355,7 +442,16 @@ private fun ResultDialog(s: MatchSession, onBack: () -> Unit) {
                 Text(r.explanation, style = MaterialTheme.typography.bodyLarge, color = Kid.InkSoft, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(20.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KidButton("Play again", s::newGame, emoji = "🔄", color = Kid.Green, shade = Kid.GreenDark)
+                    val question = s.friendRequest
+                    if (question != null) {
+                        Text(question, style = MaterialTheme.typography.titleMedium, color = Kid.Purple, textAlign = TextAlign.Center)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            KidButton("Yes!", { s.answerFriendRequest(true) }, emoji = "👍", color = Kid.Green, shade = Kid.GreenDark)
+                            KidButton("Not now", { s.answerFriendRequest(false) }, color = Color(0xFF9A97B0), shade = Color(0xFF77748D))
+                        }
+                    } else {
+                        KidButton("Play again", s::newGame, emoji = "🔄", color = Kid.Green, shade = Kid.GreenDark)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         KidButton("See the board", { s.showResult = false }, color = Kid.Blue, shade = Color(0xFF0767B3), small = true)
                         KidButton(if (s.bot != null) "New opponent" else "Home", onBack, color = Kid.Purple, shade = Kid.PurpleDark, small = true)

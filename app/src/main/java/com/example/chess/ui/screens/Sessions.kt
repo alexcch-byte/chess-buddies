@@ -60,4 +60,14 @@ interface MatchSession {
     fun newGame()
     fun acceptTakeback()
     fun declineTakeback()
+
+    // Playing a friend on another tablet. These have defaults, so games against a bot or on one screen ignore them.
+    /** Non-null for a game on two tablets: true when this tablet has the side that moves first. */
+    val nearbySideFirst: Boolean? get() = null
+    /** Shown while the other tablet can't be reached ("Waiting for your friend…"). */
+    val connectionNote: String? get() = null
+    /** A question from the friend that needs a yes or a no, such as "play again?". */
+    val friendRequest: String? get() = null
+    fun answerFriendRequest(yes: Boolean) {}
+    val friendLeft: Boolean get() = false
 }

@@ -66,6 +66,7 @@ fun SettingsScreen(progress: ProgressStore, onBack: () -> Unit) {
                 KidCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(vertical = 6.dp)) {
                         ToggleRow("🔊", "Sounds", "Clicks, dings and happy tunes", progress.soundOn) { progress.soundOn = it }
+                        ToggleRow("🗣️", "Read lessons aloud", "Sir Hops says each instruction out loud", progress.readAloud) { progress.readAloud = it }
                         ToggleRow("🟢", "Show possible moves", "Dots show where a piece can go", progress.showLegalMoves) { progress.showLegalMoves = it }
                         ToggleRow("🧑‍🏫", "Coach tips", "Warnings about risky moves, plus helpful tips", progress.coachTips) { progress.coachTips = it }
                         ToggleRow("🚨", "Danger alerts", "Red circles on your pieces that can be captured", progress.dangerAlerts) { progress.dangerAlerts = it }

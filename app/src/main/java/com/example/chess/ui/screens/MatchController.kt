@@ -19,6 +19,7 @@ import com.example.chess.engine.Outcome
 import com.example.chess.engine.Piece
 import com.example.chess.engine.Position
 import com.example.chess.engine.Square
+import com.example.chess.net.NearbySession
 import com.example.chess.ui.board.MoveAnimation
 import com.example.chess.ui.components.Mood
 import kotlinx.coroutines.CoroutineScope
@@ -29,14 +30,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
-/** A chess game against a [bot], or between two players sharing the device when [bot] is null. */
+/**
+ * A chess game against a [bot], or between two players sharing the device when [bot] is null,
+ * or against a friend on another tablet when [nearby] is set.
+ */
 class MatchController(
     override val bot: Bot?,
-    val playerWhite: Boolean,
+    playerWhiteAtStart: Boolean,
     private val scope: CoroutineScope,
     private val sound: SoundFx,
     private val progress: ProgressStore,
+    private val nearby: NearbySession? = null,
 ) : MatchSession {
+    /** Which colour the player has. In a game on two tablets the colours swap each time you play again. */
+    var playerWhite by mutableStateOf(playerWhiteAtStart)
+        private set
     var game by mutableStateOf(Game())
         private set
     var animation by mutableStateOf<MoveAnimation?>(null)
@@ -73,16 +81,32 @@ class MatchController(
     override val secondSideName: String get() = "Black"
     override val firstSideToMove: Boolean get() = position.whiteToMove
 
+    /** Set up in [init] for a game on two tablets. */
+    private var link: NearbyMatch? = null
+
+    override val nearbySideFirst: Boolean? get() = if (nearby != null) playerWhite else null
+    override val connectionNote: String?
+        get() = if (link?.linkLive == false) "Waiting for your friend to come back…" else null
+    override val friendRequest: String? get() = link?.request
+    override val friendLeft: Boolean get() = link?.friendLeft == true
+    override fun answerFriendRequest(yes: Boolean) {
+        link?.answerRequest(yes)
+    }
+
+    /** True when "you" are one particular side, rather than two people sharing the screen. */
+    private val oneSided: Boolean get() = bot != null || nearby != null
+
     override val isHumanTurn: Boolean
         get() = outcome == null && takeback == null && !thinking &&
-            (bot == null || position.whiteToMove == playerWhite)
+            if (nearby != null) link?.linkLive == true && !friendLeft && position.whiteToMove == playerWhite
+            else (bot == null || position.whiteToMove == playerWhite)
 
     override val canUndo: Boolean
-        get() = if (bot == null) game.moves.isNotEmpty() else game.moves.size >= (if (playerWhite) 1 else 2)
+        get() = if (nearby != null) false else if (bot == null) game.moves.isNotEmpty() else game.moves.size >= (if (playerWhite) 1 else 2)
 
     override val result: MatchResult?
         get() = outcome?.let { o ->
-            val won = o.whiteWins != null && (bot == null || o.whiteWins == playerWhite)
+            val won = o.whiteWins != null && (!oneSided || o.whiteWins == playerWhite)
             MatchResult(
                 headline = resultHeadline(o),
                 explanation = resultExplanation(o),
@@ -97,14 +121,76 @@ class MatchController(
 
     private val botName: String get() = bot?.displayName?.substringBefore(' ') ?: ""
 
+    /** The piece the friend just took from you (0 for none), for the coach to mention. */
+    private var friendCapture = 0
+
+    /** How a game on two tablets reaches into this controller. */
+    private val nearbyGame = object : NearbyGame {
+        override fun wires(): List<String> = game.moves.map { it.uci() }
+        override val isOver: Boolean get() = game.isOver
+
+        override fun playRemote(wire: String, animate: Boolean): Boolean {
+            val move = position.legalMoves().firstOrNull { it.uci() == wire } ?: return false
+            val before = position
+            hintJob?.cancel()
+            pendingPromotion = null
+            friendCapture = if (move.isCapture) (if (move.isEnPassant) Piece.PAWN else abs(before[move.to])) else 0
+            this@MatchController.apply(move, animate)
+            return true
+        }
+
+        override fun rebuild(wires: List<String>): Boolean {
+            var g = Game()
+            for (w in wires) g = g.play(g.position.legalMoves().firstOrNull { it.uci() == w } ?: return false)
+            game = g
+            animation = null
+            hint = null
+            outcome = null
+            showResult = false
+            pendingPromotion = null
+            friendCapture = 0
+            return true
+        }
+
+        override fun afterRemoteMoves() {
+            if (game.isOver) finish() else nearbyCoach()
+        }
+
+        override fun onConnection(live: Boolean) {
+            if (live) nearbyCoach() else {
+                mood = Mood.OOPS
+                coachText = "Your friend's tablet went quiet. Waiting for it to come back…"
+            }
+        }
+
+        override fun onRematchDeclined() {
+            mood = Mood.NORMAL
+            coachText = "Your friend doesn't want to play again right now. You can look at the board."
+        }
+
+        override fun onNewGame(iAmFirst: Boolean) {
+            playerWhite = iAmFirst
+            flipped = !iAmFirst
+            resetGame()
+        }
+
+        override fun onFriendLeft() {
+            mood = Mood.NORMAL
+            coachText = "Your friend left the game."
+        }
+    }
+
     init {
         greet()
         if (bot != null && !playerWhite) scheduleBotMove()
+        if (nearby != null) link = NearbyMatch(nearby, nearbyGame)
     }
 
     private fun greet() {
         mood = Mood.NORMAL
         coachText = when {
+            nearby != null -> if (playerWhite) "You're playing a friend! You have the White pieces, so you go first."
+            else "You're playing a friend! You have the Black pieces, so your friend goes first."
             bot == null -> "White moves first. Take turns, and have fun!"
             playerWhite -> "${bot.displayName} wants to play! You have the White pieces, so you go first."
             else -> "${bot.displayName} wants to play! You have the Black pieces, so $botName goes first."
@@ -112,6 +198,18 @@ class MatchController(
     }
 
     override fun newGame() {
+        if (nearby != null) {
+            // Both players have to agree. The board resets when the friend says yes.
+            link?.askRematch()
+            showResult = false
+            mood = Mood.NORMAL
+            coachText = "I asked your friend to play again. Waiting for a yes…"
+        } else {
+            resetGame()
+        }
+    }
+
+    private fun resetGame() {
         botJob?.cancel()
         hintJob?.cancel()
         game = Game()
@@ -164,8 +262,14 @@ class MatchController(
         hintJob?.cancel()
         val before = position
         apply(move, animate = !dragged)
+        link?.sendMove(move.uci())
         if (game.isOver) {
             finish()
+            return
+        }
+        if (nearby != null) {
+            friendCapture = 0
+            nearbyCoach()
             return
         }
         if (bot == null) {
@@ -308,6 +412,22 @@ class MatchController(
         coachText = text
     }
 
+    /** What the coach says in a game on two tablets, after either player's move. */
+    private fun nearbyCoach() {
+        val mine = position.whiteToMove == playerWhite
+        mood = Mood.NORMAL
+        coachText = when {
+            position.inCheck() && mine -> {
+                mood = Mood.OOPS
+                "Check! Your King is under attack. Protect it!"
+            }
+            position.inCheck() -> "Check! You are attacking your friend's King."
+            !mine -> "Your friend is thinking…"
+            friendCapture > 0 -> "Your friend captured your ${Piece.name(friendCapture)}!"
+            else -> YOUR_TURN.random()
+        }
+    }
+
     private fun friendCoach() {
         val side = if (position.whiteToMove) "White" else "Black"
         mood = Mood.NORMAL
@@ -373,7 +493,7 @@ class MatchController(
                 mood = Mood.NORMAL
                 sound.play(Effect.SUCCESS)
             }
-            b == null || o.whiteWins == playerWhite -> {
+            (b == null && nearby == null) || o.whiteWins == playerWhite -> {
                 mood = Mood.HAPPY
                 if (b != null) progress.recordWin(GameKind.CHESS, b)
                 sound.play(Effect.WIN)
@@ -392,6 +512,7 @@ class MatchController(
 
     private fun resultHeadline(o: Outcome): String = when {
         o.whiteWins == null -> "It's a draw!"
+        nearby != null -> if (o.whiteWins == playerWhite) "You won!" else "Your friend won this time."
         bot == null -> if (o.whiteWins) "White wins!" else "Black wins!"
         o.whiteWins == playerWhite -> "You won!"
         else -> "$botName won this time."
@@ -399,6 +520,8 @@ class MatchController(
 
     private fun resultExplanation(o: Outcome): String = when (o.reason) {
         EndReason.CHECKMATE -> when {
+            nearby != null -> if (o.whiteWins == playerWhite) "Checkmate! You trapped your friend's King. Amazing!"
+            else "Checkmate. Every game makes you stronger. Want to play again?"
             bot == null -> "Checkmate! The King is trapped with no way out."
             o.whiteWins == playerWhite -> "Checkmate! You trapped $botName's King. Amazing!"
             else -> "Checkmate. Every game makes you stronger. Want to try again?"

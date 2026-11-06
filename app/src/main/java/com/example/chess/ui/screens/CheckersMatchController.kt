@@ -18,6 +18,7 @@ import com.example.chess.data.GameKind
 import com.example.chess.data.ProgressStore
 import com.example.chess.engine.Bot
 import com.example.chess.engine.Square
+import com.example.chess.net.NearbySession
 import com.example.chess.ui.board.CheckersAnimation
 import com.example.chess.ui.components.Mood
 import kotlinx.coroutines.CoroutineScope
@@ -27,14 +28,21 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** A checkers game against a [bot], or between two players sharing the device when [bot] is null. */
+/**
+ * A checkers game against a [bot], or between two players sharing the device when [bot] is null,
+ * or against a friend on another tablet when [nearby] is set.
+ */
 class CheckersMatchController(
     override val bot: Bot?,
-    val playerRed: Boolean,
+    playerRedAtStart: Boolean,
     private val scope: CoroutineScope,
     private val sound: SoundFx,
     private val progress: ProgressStore,
+    private val nearby: NearbySession? = null,
 ) : MatchSession {
+    /** Which colour the player has. In a game on two tablets the colours swap each time you play again. */
+    var playerRed by mutableStateOf(playerRedAtStart)
+        private set
     var game by mutableStateOf(CheckersGame())
         private set
     var animation by mutableStateOf<CheckersAnimation?>(null)
@@ -68,16 +76,32 @@ class CheckersMatchController(
     override val secondSideName: String get() = "Black"
     override val firstSideToMove: Boolean get() = position.redToMove
 
+    /** Set up in [init] for a game on two tablets. */
+    private var link: NearbyMatch? = null
+
+    override val nearbySideFirst: Boolean? get() = if (nearby != null) playerRed else null
+    override val connectionNote: String?
+        get() = if (link?.linkLive == false) "Waiting for your friend to come back…" else null
+    override val friendRequest: String? get() = link?.request
+    override val friendLeft: Boolean get() = link?.friendLeft == true
+    override fun answerFriendRequest(yes: Boolean) {
+        link?.answerRequest(yes)
+    }
+
+    /** True when "you" are one particular side, rather than two people sharing the screen. */
+    private val oneSided: Boolean get() = bot != null || nearby != null
+
     override val isHumanTurn: Boolean
         get() = outcome == null && takeback == null && !thinking &&
-            (bot == null || position.redToMove == playerRed)
+            if (nearby != null) link?.linkLive == true && !friendLeft && position.redToMove == playerRed
+            else (bot == null || position.redToMove == playerRed)
 
     override val canUndo: Boolean
-        get() = if (bot == null) game.moves.isNotEmpty() else game.moves.size >= (if (playerRed) 1 else 2)
+        get() = if (nearby != null) false else if (bot == null) game.moves.isNotEmpty() else game.moves.size >= (if (playerRed) 1 else 2)
 
     override val result: MatchResult?
         get() = outcome?.let { o ->
-            val won = o.redWins != null && (bot == null || o.redWins == playerRed)
+            val won = o.redWins != null && (!oneSided || o.redWins == playerRed)
             MatchResult(
                 headline = resultHeadline(o),
                 explanation = resultExplanation(o),
@@ -92,14 +116,75 @@ class CheckersMatchController(
 
     private val botName: String get() = bot?.displayName?.substringBefore(' ') ?: ""
 
+    /** How many checkers the friend's last move jumped (0 for none), for the coach to mention. */
+    private var friendJumped = 0
+
+    private fun wireOf(m: CheckersMove) = m.path.joinToString("-")
+
+    /** How a game on two tablets reaches into this controller. */
+    private val nearbyGame = object : NearbyGame {
+        override fun wires(): List<String> = game.moves.map { wireOf(it) }
+        override val isOver: Boolean get() = game.isOver
+
+        override fun playRemote(wire: String, animate: Boolean): Boolean {
+            val move = position.legalMoves().firstOrNull { wireOf(it) == wire } ?: return false
+            hintJob?.cancel()
+            friendJumped = move.captured.size
+            this@CheckersMatchController.apply(move, animate)
+            return true
+        }
+
+        override fun rebuild(wires: List<String>): Boolean {
+            var g = CheckersGame()
+            for (w in wires) g = g.play(g.position.legalMoves().firstOrNull { wireOf(it) == w } ?: return false)
+            game = g
+            animation = null
+            hint = null
+            outcome = null
+            showResult = false
+            friendJumped = 0
+            return true
+        }
+
+        override fun afterRemoteMoves() {
+            if (game.isOver) finish() else nearbyCoach()
+        }
+
+        override fun onConnection(live: Boolean) {
+            if (live) nearbyCoach() else {
+                mood = Mood.OOPS
+                coachText = "Your friend's tablet went quiet. Waiting for it to come back…"
+            }
+        }
+
+        override fun onRematchDeclined() {
+            mood = Mood.NORMAL
+            coachText = "Your friend doesn't want to play again right now. You can look at the board."
+        }
+
+        override fun onNewGame(iAmFirst: Boolean) {
+            playerRed = iAmFirst
+            flipped = !iAmFirst
+            resetGame()
+        }
+
+        override fun onFriendLeft() {
+            mood = Mood.NORMAL
+            coachText = "Your friend left the game."
+        }
+    }
+
     init {
         greet()
         if (bot != null && !playerRed) scheduleBotMove(null)
+        if (nearby != null) link = NearbyMatch(nearby, nearbyGame)
     }
 
     private fun greet() {
         mood = Mood.NORMAL
         coachText = when {
+            nearby != null -> if (playerRed) "You're playing a friend! You're Red, so you go first. Remember: if you can jump, you must!"
+            else "You're playing a friend! You're Black, so your friend goes first."
             bot == null -> "Red moves first. Take turns, and remember: if you can jump, you must!"
             playerRed -> "$botName wants to play checkers! You're Red, so you go first."
             else -> "$botName wants to play checkers! You're Black, so $botName goes first."
@@ -107,6 +192,18 @@ class CheckersMatchController(
     }
 
     override fun newGame() {
+        if (nearby != null) {
+            // Both players have to agree. The board resets when the friend says yes.
+            link?.askRematch()
+            showResult = false
+            mood = Mood.NORMAL
+            coachText = "I asked your friend to play again. Waiting for a yes…"
+        } else {
+            resetGame()
+        }
+    }
+
+    private fun resetGame() {
         botJob?.cancel()
         hintJob?.cancel()
         game = CheckersGame()
@@ -136,8 +233,13 @@ class CheckersMatchController(
         hintJob?.cancel()
         val before = position
         apply(move, animate)
+        link?.sendMove(wireOf(move))
         when {
             game.isOver -> finish()
+            nearby != null -> {
+                friendJumped = 0
+                nearbyCoach()
+            }
             bot == null -> friendCoach()
             else -> scheduleBotMove(if (progress.coachTips) before to move else null)
         }
@@ -290,6 +392,23 @@ class CheckersMatchController(
         }
     }
 
+    /** What the coach says in a game on two tablets, after either player's move. */
+    private fun nearbyCoach() {
+        val pos = position
+        val mine = pos.redToMove == playerRed
+        mood = Mood.NORMAL
+        coachText = when {
+            !mine -> "Your friend is thinking…"
+            friendJumped > 0 -> {
+                mood = Mood.OOPS
+                (if (friendJumped == 1) "Your friend jumped your checker!" else "Your friend jumped $friendJumped of your checkers!") +
+                    if (pos.captureMoves().isNotEmpty()) " You have a jump now. You must take it!" else ""
+            }
+            pos.captureMoves().isNotEmpty() -> "You have a jump! In checkers, you must take it."
+            else -> YOUR_TURN.random()
+        }
+    }
+
     private fun friendCoach() {
         val side = Checker.sideName(position.redToMove)
         mood = Mood.NORMAL
@@ -307,7 +426,7 @@ class CheckersMatchController(
                 mood = Mood.NORMAL
                 sound.play(Effect.SUCCESS)
             }
-            b == null || o.redWins == playerRed -> {
+            (b == null && nearby == null) || o.redWins == playerRed -> {
                 mood = Mood.HAPPY
                 if (b != null) progress.recordWin(GameKind.CHECKERS, b)
                 sound.play(Effect.WIN)
@@ -326,6 +445,7 @@ class CheckersMatchController(
 
     private fun resultHeadline(o: CheckersOutcome): String = when {
         o.redWins == null -> "It's a draw!"
+        nearby != null -> if (o.redWins == playerRed) "You won!" else "Your friend won this time."
         bot == null -> if (o.redWins) "Red wins!" else "Black wins!"
         o.redWins == playerRed -> "You won!"
         else -> "$botName won this time."
@@ -335,11 +455,13 @@ class CheckersMatchController(
         val playerWon = o.redWins != null && o.redWins == playerRed
         return when (o.reason) {
             CheckersEndReason.NO_PIECES -> when {
+                nearby != null -> if (playerWon) "You captured all of your friend's checkers. Amazing!" else "Your friend captured all your checkers. Want a rematch?"
                 bot == null -> "Every one of the other side's checkers was captured."
                 playerWon -> "You captured all of $botName's checkers. Amazing!"
                 else -> "$botName captured all your checkers. Want a rematch?"
             }
             CheckersEndReason.NO_MOVES -> when {
+                nearby != null -> if (playerWon) "Your friend's checkers were trapped with no moves left!" else "Your checkers got trapped with no moves left. Want a rematch?"
                 bot == null -> "The other side was trapped with no moves left."
                 playerWon -> "$botName's checkers were trapped with no moves left!"
                 else -> "Your checkers got trapped with no moves left. Want a rematch?"

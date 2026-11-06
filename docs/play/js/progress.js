@@ -9,6 +9,7 @@ const WINS = "wins:";
 
 const DEFAULTS = {
   sound: true,
+  read_aloud: true,
   legal_moves: true,
   coach_tips: true,
   danger_alerts: true,
@@ -72,6 +73,9 @@ export class ProgressStore {
 
   get soundOn() { return this.#bool("sound"); }
   set soundOn(v) { this.#setBool("sound", v); }
+  /** Sir Hops reads lesson instructions out loud. */
+  get readAloud() { return this.#bool("read_aloud"); }
+  set readAloud(v) { this.#setBool("read_aloud", v); }
   get showLegalMoves() { return this.#bool("legal_moves"); }
   set showLegalMoves(v) { this.#setBool("legal_moves", v); }
   get coachTips() { return this.#bool("coach_tips"); }

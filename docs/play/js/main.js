@@ -4,6 +4,7 @@ import { h } from "./ui/dom.js";
 import { kidButton } from "./ui/components.js";
 import { ProgressStore } from "./progress.js";
 import { SoundFx } from "./sound.js";
+import { Narrator } from "./narrator.js";
 import { AiClient } from "./ai-client.js";
 import { homeScreen, lessonMapScreen, practiceSetupScreen, settingsScreen } from "./screens/home.js";
 import { lessonScreen } from "./screens/lesson.js";
@@ -14,6 +15,7 @@ installDefs();
 
 const progress = new ProgressStore();
 const sound = new SoundFx(() => progress.soundOn);
+const narrator = new Narrator();
 const ai = new AiClient();
 
 const FACTORIES = {
@@ -45,7 +47,7 @@ function show(route) {
 }
 
 const ctx = {
-  progress, sound, ai,
+  progress, sound, narrator, ai,
   navigate(route) {
     stack.push(route);
     history.pushState({ d: stack.length - 1 }, "");

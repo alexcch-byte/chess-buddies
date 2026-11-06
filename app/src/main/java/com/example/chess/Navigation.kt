@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -23,6 +25,8 @@ import com.example.chess.ui.screens.ChessLessonScreen
 import com.example.chess.ui.screens.ChessMatchScreen
 import com.example.chess.ui.screens.HomeScreen
 import com.example.chess.ui.screens.LessonMapScreen
+import com.example.chess.ui.screens.NearbyController
+import com.example.chess.ui.screens.NearbyScreen
 import com.example.chess.ui.screens.PracticeSetupScreen
 import com.example.chess.ui.screens.SettingsScreen
 
@@ -39,6 +43,12 @@ fun MainNavigation() {
     val sound = remember { SoundFx { progress.soundOn } }
     DisposableEffect(sound) {
         onDispose { sound.release() }
+    }
+    // Playing a friend on another tablet: lives as long as the app, and hangs up if the app is closed.
+    val nearbyScope = rememberCoroutineScope()
+    val nearby = remember { NearbyController(context.applicationContext, nearbyScope) }
+    DisposableEffect(nearby) {
+        onDispose { nearby.leave() }
     }
     val backStack = rememberNavBackStack(HomeKey)
     val navigateBack: () -> Unit = {
@@ -59,6 +69,7 @@ fun MainNavigation() {
                     onLearn = { backStack.add(LessonMapKey(it.id)) },
                     onPractice = { backStack.add(PracticeSetupKey(it.id)) },
                     onFriend = { backStack.add(MatchKey(it.id, botId = null)) },
+                    onNearby = { backStack.add(NearbyKey(it.id)) },
                     onSettings = { backStack.add(SettingsKey) },
                 )
             }
@@ -112,6 +123,38 @@ fun MainNavigation() {
                 when (GameKind.byId(key.game)) {
                     GameKind.CHESS -> ChessMatchScreen(bot, key.playerFirst, progress, sound, onBack = navigateBack)
                     GameKind.CHECKERS -> CheckersMatchScreen(bot, key.playerFirst, progress, sound, onBack = navigateBack)
+                }
+            }
+
+            entry<NearbyKey> { key ->
+                NearbyScreen(
+                    controller = nearby,
+                    game = GameKind.byId(key.game),
+                    // The lobby is replaced by the game, so "back" from the game goes to the home screen.
+                    onMatchReady = {
+                        backStack.removeLastOrNull()
+                        backStack.add(NearbyMatchKey)
+                    },
+                    onBack = navigateBack,
+                )
+            }
+
+            entry<NearbyMatchKey> {
+                val session = nearby.session
+                if (session == null) {
+                    // Nothing to play (the connection was closed): go back.
+                    LaunchedEffect(Unit) { navigateBack() }
+                } else {
+                    // Whichever way the player leaves, hang up so the friend is told.
+                    DisposableEffect(session) {
+                        onDispose { nearby.leave() }
+                    }
+                    // Taken once: the colours swap after a rematch, but the same game screen keeps running.
+                    val firstAtStart = remember(session) { session.iAmFirst }
+                    when (nearby.game) {
+                        GameKind.CHESS -> ChessMatchScreen(null, firstAtStart, progress, sound, onBack = navigateBack, nearby = session)
+                        GameKind.CHECKERS -> CheckersMatchScreen(null, firstAtStart, progress, sound, onBack = navigateBack, nearby = session)
+                    }
                 }
             }
 

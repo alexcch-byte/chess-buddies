@@ -33,6 +33,15 @@ class ProgressStore(context: Context) {
             prefs.edit { putBoolean(KEY_SOUND, value) }
         }
 
+    private val readAloudState = mutableStateOf(prefs.getBoolean(KEY_READ_ALOUD, true))
+    /** Sir Hops reads lesson instructions out loud. */
+    var readAloud: Boolean
+        get() = readAloudState.value
+        set(value) {
+            readAloudState.value = value
+            prefs.edit { putBoolean(KEY_READ_ALOUD, value) }
+        }
+
     private val legalMovesState = mutableStateOf(prefs.getBoolean(KEY_LEGAL_MOVES, true))
     var showLegalMoves: Boolean
         get() = legalMovesState.value
@@ -129,6 +138,7 @@ class ProgressStore(context: Context) {
         const val STARS = "stars:"
         const val WINS = "wins:"
         const val KEY_SOUND = "sound"
+        const val KEY_READ_ALOUD = "read_aloud"
         const val KEY_LEGAL_MOVES = "legal_moves"
         const val KEY_COACH_TIPS = "coach_tips"
         const val KEY_DANGER = "danger_alerts"

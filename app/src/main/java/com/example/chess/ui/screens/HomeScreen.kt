@@ -59,6 +59,7 @@ fun HomeScreen(
     onLearn: (GameKind) -> Unit,
     onPractice: (GameKind) -> Unit,
     onFriend: (GameKind) -> Unit,
+    onNearby: (GameKind) -> Unit,
     onSettings: () -> Unit,
 ) {
     val game = progress.selectedGame
@@ -97,6 +98,15 @@ fun HomeScreen(
                         shade = Kid.OrangeDark,
                         badge = null,
                         onClick = { onFriend(game) },
+                    )
+                    MenuCard(
+                        emoji = "📡",
+                        title = "Play Nearby",
+                        subtitle = "Two tablets, Wi-Fi or Bluetooth",
+                        color = Kid.Blue,
+                        shade = Color(0xFF0767B3),
+                        badge = null,
+                        onClick = { onNearby(game) },
                     )
                 }
             }

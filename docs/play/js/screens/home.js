@@ -203,6 +203,7 @@ export function settingsScreen(ctx) {
         sectionLabel("Helpers"),
         card(h("div", { class: "toggles" },
           toggleRow("🔊", "Sounds", "Clicks, dings and happy tunes", progress.soundOn, (v) => { progress.soundOn = v; }),
+          toggleRow("🗣️", "Read lessons aloud", "Sir Hops says each instruction out loud", progress.readAloud, (v) => { progress.readAloud = v; }),
           toggleRow("🟢", "Show possible moves", "Dots show where a piece can go", progress.showLegalMoves, (v) => { progress.showLegalMoves = v; }),
           toggleRow("🧑‍🏫", "Coach tips", "Warnings about risky moves, plus helpful tips", progress.coachTips, (v) => { progress.coachTips = v; }),
           toggleRow("🚨", "Danger alerts", "Red circles on your pieces that can be captured", progress.dangerAlerts, (v) => { progress.dangerAlerts = v; }),

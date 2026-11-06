@@ -196,6 +196,8 @@ svg { display: block; }
 .hint-pulse, .danger-pulse { animation: softPulse 0.9s linear infinite alternate; }
 
 /* Coach */
+.coach-row { display: flex; align-items: center; gap: 10px; }
+.coach-row > .coach { flex: 1; min-width: 0; }
 .coach { --bubble: #fff; --edge: #E2DDF5; display: flex; align-items: center; gap: 0; }
 .coach[data-mood="happy"] { --bubble: #E3FAF2; --edge: var(--green); }
 .coach[data-mood="oops"] { --bubble: #FFECEC; --edge: var(--red); }

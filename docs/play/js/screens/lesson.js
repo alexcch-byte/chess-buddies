@@ -2,7 +2,7 @@
 // Port of LessonScreen.kt.
 import { h } from "../ui/dom.js";
 import { lessonIcon, sirHops } from "../ui/art.js";
-import { kidButton, topBar, card, createCoach, victoryBanner, promotionDialog, confetti, fitBoard } from "../ui/components.js";
+import { kidButton, roundIconButton, topBar, card, createCoach, victoryBanner, promotionDialog, confetti, fitBoard } from "../ui/components.js";
 import { Board } from "../ui/board.js";
 import { lessonById, nextLessonAfter } from "../lessons/catalog.js";
 import { ChessLessonController } from "../controllers/lesson-chess.js";
@@ -17,7 +17,7 @@ function challengeDots(count, current, phase) {
 }
 
 export function lessonScreen(ctx, { lessonId }) {
-  const { progress, sound, navigate, back, replace } = ctx;
+  const { progress, sound, narrator, navigate, back, replace } = ctx;
   const lesson = lessonById(lessonId);
   const game = lesson.game;
   const c = game === "chess" ? new ChessLessonController(lesson, ctx) : new CheckersLessonController(lesson, ctx);
@@ -36,6 +36,8 @@ export function lessonScreen(ctx, { lessonId }) {
 
   let promoClose = null;
   let confettiKey = null;
+  let spokenText = null;
+  narrator.attach(c);
 
   const introControls = () => h("div", { class: "controls" },
     h("div", { class: "intro-dots" }, lesson.intro.map((_, i) => h("span", { class: `intro-dot${i === c.introPage ? " current" : ""}` }))),
@@ -88,7 +90,17 @@ export function lessonScreen(ctx, { lessonId }) {
       case LessonPhase.SOLVED: controls = solvedCard(); break;
       default: controls = finishedCard();
     }
-    side.replaceChildren(coach.el, controls);
+    const listen = narrator.available
+      ? roundIconButton("🔊", () => narrator.say(c.coachText, { force: true }), "Listen again")
+      : null;
+    side.replaceChildren(h("div", { class: "coach-row" }, coach.el, listen), controls);
+
+    // Everything Sir Hops says in a lesson goes through coachText, so reading that out loud covers the intro pages,
+    // each challenge, hints, mistakes and praise.
+    if (c.coachText !== spokenText) {
+      spokenText = c.coachText;
+      if (progress.readAloud) narrator.say(c.coachText);
+    }
 
     board.update({
       position: c.position,
@@ -123,9 +135,10 @@ export function lessonScreen(ctx, { lessonId }) {
 
   const unsubC = c.subscribe(render);
   const unsubP = progress.subscribe(render);
+  const unsubN = narrator.subscribe(render);
   render();
   return {
     el: root,
-    destroy() { unsubC(); unsubP(); c.destroy(); board.destroy(); stopFit(); promoClose?.(); },
+    destroy() { unsubC(); unsubP(); unsubN(); narrator.detach(c); c.destroy(); board.destroy(); stopFit(); promoClose?.(); },
   };
 }
