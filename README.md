@@ -8,7 +8,7 @@ Sir Hops, a friendly knight, walks children through short interactive lessons an
 
 ## Features
 
-- **21 lessons with 76 challenges:** 14 chess lessons and 7 checkers lessons (see [Lessons](#lessons)).
+- **28 lessons with 96 challenges:** 21 chess lessons and 7 checkers lessons, including chess strategy (see [Lessons](#lessons)).
 - **Practice matches** against five computer opponents, from very gentle to quite strong (see [Opponents](#opponents)).
 - **Play a Friend:** two players share one screen, with a **Flip board** button.
 - **Coaching from Sir Hops:**
@@ -51,7 +51,7 @@ After a risky move, the coach shows **Take it back** and **Keep my move**.
 
 Each lesson starts with a few intro pages from Sir Hops, then a set of challenges.
 
-### Chess (14 lessons, 54 challenges)
+### Chess (21 lessons, 74 challenges)
 
 | # | Lesson | What kids learn | Challenges |
 |---|--------|-----------------|-----------:|
@@ -69,6 +69,13 @@ Each lesson starts with a few intro pages from Sir Hops, then a set of challenge
 | 12 | En Passant | The special pawn capture | 2 |
 | 13 | Stalemate | Finding mate without stalemating | 2 |
 | 14 | Forks | Knight, pawn, royal and queen forks | 4 |
+| 15 | Control the Center | Fight for d4, e4, d5 and e5; Knights belong near the middle | 4 |
+| 16 | Develop Your Pieces | Bring Knights and Bishops out early; Queen and pawns can wait | 3 |
+| 17 | Keep Your King Safe | Castle early, on either side | 3 |
+| 18 | Look Before You Move | Spot hanging pieces; move, protect or capture the attacker | 3 |
+| 19 | Smart Trades | Swap pieces when you're ahead | 2 |
+| 20 | Rooks Love Open Files | Open files, the seventh row, waking up a sleepy Rook | 3 |
+| 21 | Endgame Plans | Walk the King to the center; push the passed pawn | 2 |
 
 ### Checkers (7 lessons, 22 challenges)
 
@@ -87,7 +94,7 @@ Each lesson starts with a few intro pages from Sir Hops, then a set of challenge
 - **Collect the stars.** Move to every star. Only your pieces move.
 - **Capture them all.** Some challenges forbid landing where an enemy piece could capture you.
 - **One-move puzzles.**
-  - Chess: checkmate, give check, escape check, best capture, castle, en passant, fork.
+  - Chess: checkmate, give check, escape check, best capture, castle, en passant, fork, and strategy puzzles (**find the best move**, where several sensible moves can be right).
   - Checkers: jump a set number of checkers, find a safe move, win.
 - **Set a trap.** This is a two-step checkers puzzle. First you offer a checker, then Black is forced to jump, and then you jump two of Black's checkers.
 
@@ -183,10 +190,23 @@ The unit tests check:
 
 ## Adding lessons
 
-- **Chess** challenges live in `lessons/LessonCatalog.kt`. Each challenge is a FEN position, an instruction and a `Goal`. It can also have an opening move for the opponent (`setupMove`) and a custom message for wrong answers.
+- **Chess** challenges live in `lessons/LessonCatalog.kt`. Each challenge is a FEN position, an instruction and a `Goal`. It can also have an opening move for the opponent (`setupMove`) and a custom message for wrong answers. Strategy puzzles use `Goal.PlayMove`, which lists every accepted move in UCI form (for example `moves("e2e4", "d2d4")`).
 - **Checkers** challenges live in `checkers/CheckersLessons.kt`. Positions are built with `setup(red = "c3 e3", black = "d4")`, and every square must be a dark square.
 
 Run the tests after adding a challenge. They catch impossible or illegal setups, and the star targets are worked out automatically.
+
+The web version has its own copy of the lessons in `docs/play/js/lessons/`. When you add or change a lesson, change both, so the app and the web page stay the same.
+
+## Web version
+
+Chess Buddies also runs in a browser: <https://alexcch-byte.github.io/chess-buddies/play/>. It is plain HTML, CSS and JavaScript modules in `docs/play/`, with no build step, and it is a faithful port of the app's rules, bots, coach and lessons. Progress is saved in the browser's local storage and nothing is uploaded.
+
+```bash
+python -m http.server 8765 --directory docs   # then open http://localhost:8765/play/
+node --test web-tests/chess.test.mjs web-tests/checkers.test.mjs web-tests/lessons.test.mjs
+```
+
+The Node tests port the app's tests (move-generation counts, bot behaviour, and that every lesson is solvable), so the two versions are held to the same standard.
 
 ## Project layout
 

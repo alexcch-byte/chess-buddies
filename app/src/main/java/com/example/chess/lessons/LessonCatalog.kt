@@ -300,12 +300,232 @@ object LessonCatalog {
         ),
     )
 
+    // Strategy lessons are "find the best move" puzzles. The accepted moves were worked out with the engine,
+    // and LessonCatalogTest checks that every puzzle is solvable and that not every move solves it.
+    private fun moves(vararg uci: String) = Goal.PlayMove(uci.toSet())
+
+    private val center = Lesson(
+        id = "center",
+        title = "Control the Center",
+        tagline = "The middle of the board is the best place",
+        icon = Piece.PAWN,
+        intro = listOf(
+            "The four squares in the middle of the board (d4, e4, d5 and e5) are the most important squares!",
+            "A piece in the center can reach almost anywhere. A piece in the corner can hardly do anything.",
+            "So at the start of a game, fight for the center!",
+        ),
+        challenges = listOf(
+            Challenge(
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                "Take the center! Push your e-pawn or your d-pawn two squares.",
+                moves("e2e4", "d2d4"),
+                wrongText = "That's fine, but the middle squares are the best. Push your e-pawn or d-pawn two squares!",
+            ),
+            Challenge(
+                "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+                "Both sides have a pawn in the center. Bring a Knight out to help fight for it!",
+                moves("g1f3", "b1c3"),
+                wrongText = "Knights love the center! Try moving a Knight to f3 or c3.",
+            ),
+            Challenge(
+                "4k3/8/8/8/8/8/8/1N2K3 w - - 0 1",
+                "A Knight on the edge can't do much. Which move puts it where it looks at the center?",
+                moves("b1c3"),
+                wrongText = "On the edge, a Knight sees only a few squares. Move it to c3, where it eyes the center!",
+            ),
+            Challenge(
+                "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+                "Black's pawn on e5 holds the center. Challenge it with your d-pawn!",
+                moves("d2d4"),
+                wrongText = "Good thinking, but this time fight for the center with a pawn: push your d-pawn to d4!",
+            ),
+        ),
+    )
+
+    private val develop = Lesson(
+        id = "develop",
+        title = "Develop Your Pieces",
+        tagline = "Get everyone into the game",
+        icon = Piece.BISHOP,
+        intro = listOf(
+            "Developing means bringing your Knights and Bishops out from their starting squares so they can join the game.",
+            "Pieces stuck at home can't help you! Try to get every Knight and Bishop out early.",
+            "Don't bring your Queen out too soon, because she can get chased around. And try not to move the same piece twice.",
+        ),
+        challenges = listOf(
+            Challenge(
+                "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+                "It's the opening! Bring out a Knight or a Bishop.",
+                moves("b1c3", "f1e2", "f1d3", "f1c4", "f1b5", "g1e2", "g1f3"),
+                wrongText = "Not quite! In the opening, bring a Knight or Bishop out toward the center. Pawns and the Queen can wait.",
+            ),
+            Challenge(
+                "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+                "Your Knight is out. Now develop your Bishop!",
+                moves("f1e2", "f1d3", "f1c4", "f1b5"),
+                wrongText = "Your Bishop is still asleep at home! Wake it up with a move like Bc4.",
+            ),
+            Challenge(
+                "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+                "Your Bishop and Knight are out, but one piece is still asleep. Develop your other Knight!",
+                moves("b1c3"),
+                wrongText = "Your Knight on b1 is still at home. Bring it out to c3!",
+            ),
+        ),
+    )
+
+    private val kingSafety = Lesson(
+        id = "king_safety",
+        title = "Keep Your King Safe",
+        tagline = "Castle early and tuck him away",
+        icon = Piece.KING,
+        intro = listOf(
+            "Your King is the most important piece, so keep him safe! In the middle of the board he can be attacked from everywhere.",
+            "The best way to protect him is to castle early. He hides behind his pawns and the Rook comes into the game.",
+            "Try to castle in the first ten moves, once your Knight and Bishop are out.",
+        ),
+        challenges = listOf(
+            Challenge(
+                "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+                "Your Knight and Bishop are out, so it's time to castle on the King's side!",
+                Goal.Castle(kingside = true),
+            ),
+            Challenge(
+                "rnbqk2r/pppp1ppp/5n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+                "Black is getting ready to attack. Tuck your King away with a castle!",
+                Goal.Castle(kingside = null),
+            ),
+            Challenge(
+                "r3kbnr/pppqpppp/2n5/3p1b2/3P1B2/2N5/PPPQPPPP/R3KBNR w KQkq - 6 5",
+                "The pieces on the Queen's side have moved out of the way. Castle that way!",
+                Goal.Castle(kingside = false),
+            ),
+        ),
+    )
+
+    private val lookFirst = Lesson(
+        id = "look_first",
+        title = "Look Before You Move",
+        tagline = "Don't leave your pieces hanging",
+        icon = -Piece.BISHOP,
+        intro = listOf(
+            "Before every move, ask yourself: is anything of mine hanging? A piece is hanging when the enemy can capture it for free.",
+            "You can save a piece by moving it away, by protecting it, or by capturing the piece that attacks it.",
+            "Always look at the whole board before you move!",
+        ),
+        challenges = listOf(
+            Challenge(
+                "rnbqkbnr/1ppp1ppp/p7/1B2p3/4P3/8/PPPP1PPP/RNBQK1NR w KQkq - 0 3",
+                "Black's pawn is about to capture your Bishop! Move it to a square where nothing can capture it.",
+                moves("b5a4", "b5c4", "b5d3", "b5e2", "b5f1"),
+                wrongText = "Oh no, something of yours can still be captured! Move the Bishop where no black piece can reach it.",
+            ),
+            Challenge(
+                "rnbqkb1r/pppp1ppp/5n2/4p2Q/4P3/8/PPPP1PPP/RNB1KBNR w KQkq - 2 3",
+                "Black's Knight attacks your Queen! Move her to a safe square.",
+                moves("h5g5", "h5f5", "h5e5", "h5h4", "h5h3", "h5f3", "h5e2", "h5d1"),
+                wrongText = "Your Queen can still be captured! Find a square that no black piece attacks.",
+            ),
+            Challenge(
+                "4k3/8/8/2b5/3N4/8/2P1P3/4K3 w - - 0 1",
+                "Black's Bishop attacks your Knight, and nothing protects it. Move it away, or protect it with a pawn!",
+                moves("c2c3", "e2e3", "d4e6", "d4f5", "d4f3", "d4b3", "d4b5", "d4c6"),
+                wrongText = "Your Knight can still be captured for free! Protect it with a pawn, or move it to safety.",
+            ),
+        ),
+    )
+
+    private val trades = Lesson(
+        id = "trades",
+        title = "Smart Trades",
+        tagline = "Trade pieces when you're ahead",
+        icon = -Piece.ROOK,
+        intro = listOf(
+            "When you have more than your opponent, swapping pieces one for one makes your lead even bigger.",
+            "With fewer pieces left, there are fewer tricks to watch out for, and it gets easier to win!",
+            "But if you're behind, don't trade. Keep as many pieces as you can.",
+        ),
+        challenges = listOf(
+            Challenge(
+                "4k3/4p3/3q4/8/3Q4/8/R7/4K3 w - - 0 1",
+                "You have an extra Rook! Trade Queens to make winning easier.",
+                moves("d4d6"),
+                wrongText = "When you're ahead, trade! Capture the Queen on d6. Black will take back, but you keep your extra Rook.",
+            ),
+            Challenge(
+                "3rk3/pp3ppp/8/8/8/2N5/PP3PPP/3RK3 w - - 0 1",
+                "You're a Knight ahead. Trade Rooks on the open file!",
+                moves("d1d8"),
+                wrongText = "Take the trade! Your Rook can capture Black's Rook on d8. Black takes back, and you're still ahead.",
+            ),
+        ),
+    )
+
+    private val rookFiles = Lesson(
+        id = "rook_files",
+        title = "Rooks Love Open Files",
+        tagline = "Give your Rooks room to run",
+        icon = Piece.ROOK,
+        intro = listOf(
+            "An open file is a column of squares with no pawns on it. Rooks are strongest there, because nothing blocks their way!",
+            "Another great spot is the seventh row, where a Rook can attack lots of pawns.",
+            "Wake up your Rooks! A sleepy Rook stuck behind its own pawn does nothing.",
+        ),
+        challenges = listOf(
+            Challenge(
+                "4k3/pp3ppp/8/8/8/8/PP3PPP/R3K3 w - - 0 1",
+                "Put your Rook on an open file: a column with no pawns!",
+                moves("a1c1", "a1d1"),
+                wrongText = "A Rook is strongest on a column with no pawns in the way. Look for an open file!",
+            ),
+            Challenge(
+                "6k1/pp3ppp/8/8/8/8/PP3PPP/3RK3 w - - 0 1",
+                "Your Rook is on an open file. Now march it to the seventh row, where it attacks the pawns!",
+                moves("d1d7"),
+                wrongText = "Rooks love the seventh row, where they attack the enemy pawns. March your Rook up to d7!",
+            ),
+            Challenge(
+                "4k3/pp3ppp/8/8/8/8/PP3PPP/R2R2K1 w - - 0 1",
+                "One of your Rooks is asleep behind a pawn. Wake it up by moving it to an open file!",
+                moves("a1c1"),
+                wrongText = "The Rook on a1 is stuck behind its own pawn. Move it to the open c-file!",
+            ),
+        ),
+    )
+
+    private val endgamePlans = Lesson(
+        id = "endgame_plans",
+        title = "Endgame Plans",
+        tagline = "Wake up your King and push your pawns",
+        icon = -Piece.PAWN,
+        intro = listOf(
+            "In the endgame, only a few pieces are left, so there's less danger. Your King can come out and fight!",
+            "Walk your King toward the center and toward the action. A King hiding in the corner doesn't help.",
+            "A passed pawn has no enemy pawns in front of it. Push it to make a new Queen!",
+        ),
+        challenges = listOf(
+            Challenge(
+                "4k3/8/8/8/8/8/6P1/6K1 w - - 0 1",
+                "Time to wake up your King! Walk him toward the center and collect the stars.",
+                Goal.CollectStars(squares("f2", "e3", "d4")),
+            ),
+            Challenge(
+                "6k1/6pp/8/8/8/8/P5P1/4K3 w - - 0 1",
+                "You have two pawns, but only one is a passed pawn that nothing can stop. Push it!",
+                moves("a2a3", "a2a4"),
+                wrongText = "That pawn has enemy pawns in its way. Find the passed pawn, where no black pawn can stop it!",
+            ),
+        ),
+    )
+
     val units: List<LessonUnit<Lesson>> = listOf(
         LessonUnit("Meet the Pieces", "♞", listOf(rook, bishop, queen, king, knight, pawn)),
         LessonUnit("Capture!", "🎯", listOf(capture, promotion)),
         LessonUnit("Attack the King", "⚔️", listOf(check, checkmate)),
         LessonUnit("Special Rules", "✨", listOf(castling, enPassant, stalemate)),
         LessonUnit("Clever Tricks", "🧠", listOf(forks)),
+        LessonUnit("Opening Strategy", "🚀", listOf(center, develop, kingSafety)),
+        LessonUnit("Winning Plans", "🏆", listOf(lookFirst, trades, rookFiles, endgamePlans)),
     )
 
     val lessons: List<Lesson> = units.flatMap { it.lessons }

@@ -40,6 +40,9 @@ sealed interface Goal {
 
     /** Attack two valuable pieces at once with a piece that can't be captured. */
     data object Fork : Goal
+
+    /** Strategy puzzles: pick the sensible move. Any of the listed moves (UCI, e.g. "e2e4") solves it. */
+    data class PlayMove(val moves: Set<String>) : Goal
 }
 
 data class Challenge(
@@ -103,6 +106,7 @@ object LessonRules {
         is Goal.Castle -> move.isCastle && (goal.kingside == null || (move.to > move.from) == goal.kingside)
         Goal.EnPassant -> move.isEnPassant
         Goal.Fork -> isSafeFork(after, move.to)
+        is Goal.PlayMove -> move.uci() in goal.moves
         else -> false
     }
 

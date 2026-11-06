@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7A5AF8"/><stop offset="1" stop-color="#4B3CC4"/></linearGradient>
+    <linearGradient id="k" gradientUnits="userSpaceOnUse" x1="25" y1="10" x2="75" y2="90"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.5" stop-color="#FFFDF6"/><stop offset="1" stop-color="#EBE1CA"/></linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="url(#bg)"/>
+  <g transform="translate(10 8) scale(0.8)">
+    <path d="M17,91.5 C17,87.5 21,84.5 25,84.5 L75,84.5 C79,84.5 83,87.5 83,91.5 C83,92.5 80.5,93 76,93 L24,93 C19.5,93 17,92.5 17,91.5 Z" fill="url(#k)" stroke="#2A2430" stroke-width="3.2" stroke-linejoin="round"/>
+    <path d="M29,78.5 C27,67 31,59 40,54 C34,57 26,58 20,53 C15,48 16,42 22,38 C27,35 30,30 33,23 C35,19 37,13 40,8 L47,15 C50,12 53,10 56,8 L56,16 C68,19 76,30 75,48 C74,62 71,71 72,78.5 Z" fill="url(#k)" stroke="#2A2430" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M56,18 C65,24 69,34 68,48 C67,61 65,70 66,78.5" fill="none" stroke="#2A2430" stroke-width="3.2" stroke-linecap="round"/>
+    <ellipse cx="34" cy="30" rx="3.5" ry="4" fill="#2A2430"/>
+    <ellipse cx="33" cy="28.5" rx="1.4" ry="1.4" fill="#fff"/>
+  </g>
+</svg>

@@ -92,6 +92,7 @@ class LessonController(
             is Goal.Castle -> "Castle!"
             Goal.EnPassant -> "Capture en passant"
             Goal.Fork -> "Find the fork"
+            is Goal.PlayMove -> "Find the best move"
         }
 
     /** A piece to demonstrate during the intro: the first piece of the side to move. */
