@@ -281,6 +281,8 @@ svg { display: block; }
 .step-num { width: 34px; height: 34px; flex: none; border-radius: 50%; background: var(--purple); color: #fff; display: grid; place-items: center; font-size: 18px; }
 .step.done .step-num { background: var(--green); }
 .step-help { color: var(--ink-soft); }
+.qr { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.qr svg { width: min(100%, 340px); height: auto; border-radius: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
 .code-box { width: 100%; min-height: 96px; resize: vertical; font: 500 13px/1.35 ui-monospace, Consolas, monospace; color: var(--ink); background: #F7F5FF; border: 2px solid #E2DDF5; border-radius: 14px; padding: 10px 12px; word-break: break-all; -webkit-user-select: text; user-select: text; }
 .code-box:focus-visible { outline: 4px solid var(--ink); outline-offset: 2px; }
 .waiting { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 12px; font-size: 18px; font-weight: 800; color: var(--purple); }
@@ -288,6 +290,11 @@ svg { display: block; }
 .note.bad { background: #FFECEC; color: var(--red-d); }
 .friend-ask { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: #F1ECFF; border-radius: 16px; }
 .friend-ask-text { font-size: 18px; font-weight: 800; color: var(--purple-d); }
+
+.scan-view { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #111; border-radius: 16px; overflow: hidden; }
+.scan-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-frame { position: absolute; inset: 14%; border: 4px solid rgba(255, 255, 255, 0.9); border-radius: 18px; box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.28); pointer-events: none; }
+.scan-status { min-height: 2.8em; font-size: 16px; }
 
 /* Dialogs */
 .overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(30, 24, 60, 0.5); padding: 16px; animation: fadeIn 0.15s ease-out; }

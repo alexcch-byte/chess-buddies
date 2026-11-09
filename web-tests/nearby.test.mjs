@@ -397,37 +397,117 @@ test("the glue tracks the connection, rematch questions and leaving", () => {
 
 // ---------- invite codes ----------
 
-const SAMPLE_SDP = [
-  "v=0", "o=- 4611731400430051336 2 IN IP4 127.0.0.1", "s=-", "t=0 0", "a=group:BUNDLE 0", "a=extmap-allow-mixed",
-  "a=msid-semantic: WMS", "m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0",
-  "a=candidate:1 1 udp 2113937151 3c1c6e8f-1a2b-4c5d-8e9f-0a1b2c3d4e5f.local 54321 typ host generation 0 network-cost 999",
-  "a=candidate:2 1 udp 2113939711 6f7e8d9c-0b1a-4f3e-9d2c-1b0a9f8e7d6c.local 60123 typ host generation 0 network-cost 999",
-  "a=ice-ufrag:Zq3x", "a=ice-pwd:Zk8Hh1pYd2n0Rr5Vx7LcB4eT", "a=ice-options:trickle",
-  "a=fingerprint:sha-256 4F:3A:9C:11:2B:7D:E0:55:A1:B2:C3:D4:E5:F6:07:18:29:3A:4B:5C:6D:7E:8F:90:A1:B2:C3:D4:E5:F6:07:18",
+// Real descriptions captured from Chrome: a data channel and no servers, so two mDNS host candidates each.
+const REAL_OFFER = [
+  "v=0", "o=- 5202960942357305530 2 IN IP4 127.0.0.1", "s=-", "t=0 0", "a=group:BUNDLE 0", "a=extmap-allow-mixed", "a=msid-semantic: WMS",
+  "m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0",
+  "a=candidate:4042789491 1 udp 2113937151 a3f83d50-6552-48ef-b8aa-9631f6f14843.local 59358 typ host generation 0 network-cost 999",
+  "a=candidate:2909940398 1 udp 2113939711 aefa4f3c-6f97-4ff0-8527-75de5a217e22.local 59359 typ host generation 0 network-cost 999",
+  "a=ice-ufrag:fu1J", "a=ice-pwd:BxZgGqY6Vf9BFP7IWAN38opb", "a=ice-options:trickle",
+  "a=fingerprint:sha-256 B1:74:CD:9F:51:9F:13:9E:00:A8:78:50:14:D2:7B:F0:D3:96:6C:BC:98:62:B4:3D:BE:E8:E6:90:1F:2E:60:DE",
   "a=setup:actpass", "a=mid:0", "a=sctp-port:5000", "a=max-message-size:262144", "",
 ].join("\r\n");
+const REAL_ANSWER = [
+  "v=0", "o=- 1909921813312749420 2 IN IP4 127.0.0.1", "s=-", "t=0 0", "a=group:BUNDLE 0", "a=extmap-allow-mixed", "a=msid-semantic: WMS",
+  "m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0",
+  "a=candidate:2115272588 1 udp 2113937151 a3f83d50-6552-48ef-b8aa-9631f6f14843.local 57123 typ host generation 0 network-cost 999",
+  "a=candidate:2250988509 1 udp 2113939711 aefa4f3c-6f97-4ff0-8527-75de5a217e22.local 57124 typ host generation 0 network-cost 999",
+  "a=ice-ufrag:1Q2r", "a=ice-pwd:D4ajdSS5pthSCyxEneKEGEPb", "a=ice-options:trickle",
+  "a=fingerprint:sha-256 64:35:2B:D1:6D:36:70:9D:E5:DB:30:18:A7:1A:F8:05:26:A6:CD:4D:6B:48:79:26:F8:E1:76:7C:21:4E:C1:0E",
+  "a=setup:active", "a=mid:0", "a=sctp-port:5000", "a=max-message-size:262144", "",
+].join("\r\n");
 
-test("a code carries the description there and back", async () => {
-  const code = await encodeSignal({ role: "offer", wide: false, sdp: SAMPLE_SDP });
-  assert.match(code, /^CB1OLZ[A-Za-z0-9_-]+$/, "starts with the marker and uses only link-safe letters");
-  assert.ok(code.length < SAMPLE_SDP.length, "squeezed");
-  const back = await decodeSignal(code);
-  assert.equal(back.role, "offer");
-  assert.equal(back.wide, false);
-  assert.equal(back.sdp, SAMPLE_SDP);
+// A Firefox-style description: real addresses (IPv4 and IPv6), lookup-server addresses, upper-case "UDP", and lines we drop.
+const FIREFOX_STYLE = [
+  "v=0", "o=mozilla...THIS_IS_SDPARTA-99.0 7787 0 IN IP4 0.0.0.0", "s=-", "t=0 0", "a=sendrecv", "a=fingerprint:sha-256 " + "AB:".repeat(31) + "AB",
+  "a=group:BUNDLE 0", "a=ice-options:trickle", "a=msid-semantic:WMS *",
+  "m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0",
+  "a=candidate:0 1 UDP 2122252543 192.168.1.20 49152 typ host",
+  "a=candidate:1 1 UDP 2122187007 2001:db8:0:0:0:0:0:1 49153 typ host",
+  "a=candidate:2 1 UDP 1686052607 203.0.113.5 49152 typ srflx raddr 192.168.1.20 rport 49152",
+  "a=candidate:3 1 UDP 1686052606 203.0.113.6 49153 typ srflx raddr 0.0.0.0 rport 0 generation 0",
+  "a=sendrecv", "a=end-of-candidates", "a=ice-pwd:0123456789abcdef0123456789abcdef", "a=ice-ufrag:abcd1234",
+  "a=mid:0", "a=setup:passive", "a=sctp-port:5000", "a=max-message-size:1073741823", "",
+].join("\r\n");
 
-  const reply = await encodeSignal({ role: "answer", wide: true, sdp: SAMPLE_SDP });
-  assert.match(reply, /^CB1AWZ/);
-  assert.deepEqual(await decodeSignal(reply), { role: "answer", wide: true, sdp: SAMPLE_SDP });
+/** The facts a connection depends on, so two descriptions can be compared whatever order or wording they use. */
+function facts(sdp) {
+  const lines = sdp.split(/\r?\n/).filter(Boolean);
+  const pick = (re) => lines.map((l) => re.exec(l)).filter(Boolean).map((m) => m[1])[0];
+  const host = (a) => (a.includes(":") ? new URL(`http://[${a}]`).hostname : a);
+  return {
+    ufrag: pick(/^a=ice-ufrag:(.+)$/),
+    pwd: pick(/^a=ice-pwd:(.+)$/),
+    fingerprint: pick(/^a=fingerprint:sha-256 (.+)$/).toUpperCase(),
+    setup: pick(/^a=setup:(.+)$/),
+    candidates: lines.filter((l) => l.startsWith("a=candidate:")).map((l) => {
+      const t = l.split(" ");
+      const c = { proto: t[2].toLowerCase(), priority: Number(t[3]), address: host(t[4]), port: Number(t[5]), type: t[7] };
+      const r = t.indexOf("raddr");
+      if (r > 0) { c.raddr = host(t[r + 1]); c.rport = Number(t[t.indexOf("rport") + 1]); }
+      return c;
+    }),
+  };
+}
+
+/** Descriptions the short form can't carry. */
+const ODD_LINE = REAL_OFFER.replace("a=setup:actpass", "a=setup:actpass\r\na=ssrc:1 cname:odd");
+
+test("a real description packs into a short code and comes back with every fact intact", async () => {
+  for (const [role, sdp, setup] of [["offer", REAL_OFFER, "actpass"], ["answer", REAL_ANSWER, "active"]]) {
+    const code = await encodeSignal({ role, wide: false, sdp });
+    assert.match(code, role === "offer" ? /^CB2OL[A-Za-z0-9_-]+$/ : /^CB2AL[A-Za-z0-9_-]+$/, "short form, link-safe letters only");
+    assert.ok(code.length < 170, `code is ${code.length} letters`);
+    const back = await decodeSignal(code);
+    assert.equal(back.role, role);
+    assert.equal(back.wide, false);
+    assert.deepEqual(facts(back.sdp), facts(sdp));
+    assert.equal(facts(back.sdp).setup, setup);
+  }
 });
 
-test("a real-size description gives a code short enough to send in a message", async () => {
-  const code = await encodeSignal({ role: "offer", wide: false, sdp: SAMPLE_SDP });
-  assert.ok(code.length < 700, `code is ${code.length} letters`);
+test("the rebuilt description is a complete, standard data-channel description", async () => {
+  const { sdp } = await decodeSignal(await encodeSignal({ role: "offer", wide: true, sdp: REAL_OFFER }));
+  for (const line of [
+    "v=0", "a=group:BUNDLE 0", "m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0", "a=mid:0", "a=sctp-port:5000",
+    "a=ice-ufrag:fu1J", "a=ice-pwd:BxZgGqY6Vf9BFP7IWAN38opb", "a=setup:actpass",
+    "a=candidate:1 1 udp 2113937151 a3f83d50-6552-48ef-b8aa-9631f6f14843.local 59358 typ host generation 0",
+  ]) assert.ok(sdp.split("\r\n").includes(line), `missing: ${line}`);
+  assert.ok(sdp.endsWith("\r\n"));
+});
+
+test("real addresses, IPv6, lookup-server addresses and other browsers' wording are carried too", async () => {
+  const code = await encodeSignal({ role: "answer", wide: true, sdp: FIREFOX_STYLE });
+  assert.match(code, /^CB2AW/, "still the short form");
+  const back = await decodeSignal(code);
+  assert.equal(back.wide, true);
+  assert.deepEqual(facts(back.sdp), facts(FIREFOX_STYLE));
+  assert.equal(facts(back.sdp).candidates.length, 4);
+});
+
+test("anything the short form can't carry falls back to the long form, which still round-trips exactly", async () => {
+  const odd = [
+    ODD_LINE, // a line we don't know
+    REAL_OFFER.replace("typ host generation 0", "typ host tcptype passive generation 0"), // an attribute we don't know
+    REAL_OFFER.replace(" 1 udp ", " 2 udp "), // a second component
+    REAL_OFFER.replace("fingerprint:sha-256", "fingerprint:sha-1"), // a different hash
+  ];
+  for (const sdp of odd) {
+    const code = await encodeSignal({ role: "offer", wide: false, sdp });
+    assert.match(code, /^CB1OL[ZR]/, "long form");
+    assert.equal((await decodeSignal(code)).sdp, sdp);
+  }
+});
+
+test("an invite link and a reply are short enough for a QR code a tablet camera can read", async () => {
+  const link = inviteLink(await encodeSignal({ role: "offer", wide: false, sdp: REAL_OFFER }), "https://alexcch-byte.github.io/chess-buddies/play/");
+  assert.ok(link.length < 230, `invite link is ${link.length} letters`);
+  const reply = await encodeSignal({ role: "answer", wide: false, sdp: REAL_ANSWER });
+  assert.ok(reply.length < 170, `reply is ${reply.length} letters`);
 });
 
 test("a code can be pasted with a message or a whole link around it", async () => {
-  const code = await encodeSignal({ role: "offer", wide: false, sdp: SAMPLE_SDP });
+  const code = await encodeSignal({ role: "offer", wide: false, sdp: REAL_OFFER });
   assert.equal(extractCode(`  Join me!\n${code}\nthanks `), code);
   const link = inviteLink(code, "https://example.github.io/chess-buddies/play/?x=1");
   assert.equal(link, `https://example.github.io/chess-buddies/play/#join=${code}`);
@@ -435,15 +515,19 @@ test("a code can be pasted with a message or a whole link around it", async () =
   assert.equal(codeFromHash(`#join=${code}`), code);
   assert.equal(codeFromHash("#something-else"), null);
   assert.equal(codeFromHash(""), null);
-  assert.equal((await decodeSignal(link)).sdp, SAMPLE_SDP);
+  assert.deepEqual(facts((await decodeSignal(link)).sdp), facts(REAL_OFFER));
 });
 
 test("codes that are wrong say so in plain words", async () => {
   await assert.rejects(decodeSignal(""), SignalError);
   await assert.rejects(decodeSignal("hello there"), /doesn't look like a Chess Buddies code/);
-  const code = await encodeSignal({ role: "offer", wide: false, sdp: SAMPLE_SDP });
-  await assert.rejects(decodeSignal(code.slice(0, 40)), SignalError, "cut short");
-  await assert.rejects(decodeSignal("CB1OLZ!!!"), SignalError);
+  const code = await encodeSignal({ role: "offer", wide: false, sdp: REAL_OFFER });
+  await assert.rejects(decodeSignal(code.slice(0, 40)), /cut short/, "a short code that stops early");
+  await assert.rejects(decodeSignal(code.slice(0, -30)), /cut short/);
+  await assert.rejects(decodeSignal("CB2OL!!!"), SignalError);
+  await assert.rejects(decodeSignal("CB2OL" + Buffer.from([9, 1, 2, 3]).toString("base64url")), /typo/, "an unknown setup value");
+  const long = await encodeSignal({ role: "offer", wide: false, sdp: ODD_LINE });
+  await assert.rejects(decodeSignal(long.slice(0, 40)), SignalError, "a long code that stops early");
   await assert.rejects(decodeSignal("CB1OLR" + Buffer.from("not a description").toString("base64url")), /typo/);
 });
 

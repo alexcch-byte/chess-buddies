@@ -72,14 +72,16 @@ How it works:
 
 A web page can't scan the Wi-Fi or use Bluetooth, so two browsers pair by swapping two short codes (a grown-up helps), then talk directly using a WebRTC data channel. No game data goes through a server.
 
-1. One player opens **Play Nearby**, picks their colour and taps **Start a game**. The page makes an **invite link**.
-2. The friend opens that link on their device (any browser, tablet, phone or computer). It lands straight on joining and shows a **reply code**.
-3. The friend sends the reply code back, the host pastes it and taps **Connect**. The game starts.
+1. One player opens **Play Nearby**, picks their colour and taps **Start a game**. The page shows an **invite** as a QR code and as a link.
+2. The friend scans the QR code (with a phone's camera app, or **Scan the invite** in the page) or opens the link. It lands straight on joining and shows a **reply**, also as a QR code and as text.
+3. The host taps **Scan their reply** (or pastes the reply text) and the game starts. With the camera buttons nobody has to type or paste anything.
 
 - By default both devices must be on the same Wi-Fi and nothing is contacted. **My friend is far away** also asks Google's public STUN service for each device's internet address (the moves still go straight between the two devices); it can't get through every home router.
-- The codes are the connection descriptions (SDP) deflate-compressed into URL-safe text, about 650 characters (`docs/play/js/nearby/signal.js`: `CB1` + invite/reply + same-Wi-Fi/far-away + squeezed/plain + payload). They can be pasted with other text around them.
+- The codes (`docs/play/js/nearby/signal.js`) are `CB2` + invite/reply + same-Wi-Fi/far-away + payload. The payload is the few facts a data-channel description really holds (ICE user name and password, the DTLS fingerprint, the addresses) packed as bytes, and the standard SDP text is rebuilt on the other side. That is about 150 letters, so an invite link is about 210 and the QR code is 49 modules wide, which a tablet camera can read. A description with anything the short form can't carry falls back to the longer `CB1` form (the whole SDP, deflated, about 650 letters), which is still understood. Codes can be pasted with other text around them.
+- **QR codes:** `docs/play/js/ui/qr.js` is a QR generator written from the standard (byte mode, versions 1 to 40, all four error-correction levels). Its output was decoded with OpenCV for every version and level, and `web-tests/qr-scan.test.mjs` reads it back with jsQR too (rotated, noisy and small). The invite QR holds the link, so any phone camera app can open it.
+- **Scanning in the page** (`docs/play/js/ui/qr-scan.js`) uses the device camera and the open-source [jsQR](https://github.com/cozmo/jsQR) 1.4.0 reader (Apache-2.0, vendored in `docs/play/js/vendor/`, loaded only when someone taps Scan; see its README for the checksum). The camera needs a secure page (https or localhost) and the user's permission, switches off when the scanner closes, and nothing is recorded or sent anywhere. The Scan buttons are hidden when the browser has no camera API.
 - The game rules are the app's `NearbySession` ported to JavaScript (`docs/play/js/nearby/session.js`): same handshake, heartbeat, move numbering, catch-up and play-again swap. Two differences: there is no picture code (the invite is the secret), and a quiet connection just pauses the game and resumes by itself. If the connection closes for good (the friend's tab was closed, say), the game ends and you invite again; there is no automatic reconnect.
-- Not checked on real devices yet: the connection has been tried between two tabs of one browser, not across two devices on a real network.
+- Not checked on real devices yet: the connection has been tried between two tabs of one browser, and the scanning with a fake camera stream (a canvas showing the other tab's code), not across two devices on a real network or with a real tablet camera. A Fire tablet camera reading a code off another tablet's screen is the thing most worth trying.
 
 ## Lessons
 
@@ -240,7 +242,7 @@ Chess Buddies also runs in a browser: <https://alexcch-byte.github.io/chess-budd
 
 ```bash
 python -m http.server 8765 --directory docs   # then open http://localhost:8765/play/
-node --test web-tests/chess.test.mjs web-tests/checkers.test.mjs web-tests/lessons.test.mjs web-tests/narrator.test.mjs web-tests/nearby.test.mjs
+node --test web-tests/chess.test.mjs web-tests/checkers.test.mjs web-tests/lessons.test.mjs web-tests/narrator.test.mjs web-tests/nearby.test.mjs web-tests/qr.test.mjs web-tests/qr-scan.test.mjs
 ```
 
 The Node tests port the app's tests (move-generation counts, bot behaviour, and that every lesson is solvable), so the two versions are held to the same standard. `nearby.test.mjs` runs the web Play Nearby session over in-memory links (a port of the app's session tests), checks the invite codes, and plays whole chess and checkers games through the real controllers on both sides. The WebRTC connection itself needs a real browser and isn't covered there.
