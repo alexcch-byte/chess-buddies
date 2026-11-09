@@ -120,7 +120,8 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(40.dp),
                 ) {
                     Hero(game, Modifier.weight(1f))
-                    menu(Modifier.weight(1f))
+                    // Four cards are taller than a landscape tablet screen, so the menu has to scroll.
+                    menu(Modifier.weight(1f).verticalScroll(rememberScrollState()))
                 }
             } else {
                 Column(
