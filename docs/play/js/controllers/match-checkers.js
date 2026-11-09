@@ -1,8 +1,10 @@
-// A checkers game against a bot, or between two players sharing the device when bot is null. Port of CheckersMatchController.kt.
+// A checkers game against a bot, or between two players sharing the device when bot is null, or against a friend in
+// another browser when `nearby` (a NearbySession) is given. Port of CheckersMatchController.kt.
 import { Square } from "../chess/position.js";
 import { Checker, CheckersGame, CheckersEndReason } from "../checkers/checkers.js";
 import { explainIllegalCheckers } from "../checkers/checkers-coach.js";
 import { sleep, pick } from "../ui/dom.js";
+import { NearbyMatch } from "../nearby/match-link.js";
 import { Controller, Mood } from "./base.js";
 
 const MIN_THINK_MS = 650;
@@ -17,11 +19,17 @@ const TIPS = [
 ];
 
 const pathKey = (m) => m.path.join(",");
+/** How a move is named when it is sent to the friend. */
+const wireOf = (m) => m.path.join("-");
 
 export class CheckersMatchController extends Controller {
-  constructor(bot, playerRed, { progress, sound, ai }) {
+  constructor(bot, playerRed, { progress, sound, ai }, nearby = null) {
     super();
     this.bot = bot;
+    this.nearby = nearby;
+    this.link = null;
+    /** How many checkers the friend's last move jumped (0 for none), for the coach to mention. */
+    this.friendJumped = 0;
     this.playerRed = playerRed;
     this.progress = progress;
     this.sound = sound;
@@ -43,6 +51,96 @@ export class CheckersMatchController extends Controller {
     this.botMovesSinceTip = 0;
     this.#greet();
     if (bot && !playerRed) this.#scheduleBotMove(null);
+    if (nearby) this.link = new NearbyMatch(nearby, this, () => this.emit());
+  }
+
+  // ---------- a friend in another browser ----------
+
+  /** Whether this player has Red in a game against a friend, or null when it isn't one. */
+  get nearbySideFirst() { return this.nearby ? this.playerRed : null; }
+  get connectionNote() {
+    if (!this.link || this.link.linkLive) return null;
+    return this.nearby.disconnected ? "The connection was lost. Go back, then invite your friend again." : "Waiting for your friend to come back…";
+  }
+  get friendRequest() { return this.link?.request ?? null; }
+  get friendLeft() { return this.link?.friendLeft === true; }
+  answerFriendRequest(yes) { this.link?.answerRequest(yes); }
+  /** Says goodbye to the friend and closes the connection. */
+  leaveNearby() { this.link?.leave(); }
+
+  // What NearbyMatch needs from a game (see nearby/match-link.js).
+  wires() { return this.game.moves.map(wireOf); }
+  get isOver() { return this.game.isOver; }
+
+  playRemote(wire, animate) {
+    const move = this.position.legalMoves().find((m) => wireOf(m) === wire);
+    if (!move) return false;
+    this.hintToken++;
+    this.friendJumped = move.captured.length;
+    this.#apply(move, animate);
+    return true;
+  }
+
+  rebuild(wires) {
+    let g = new CheckersGame();
+    for (const w of wires) {
+      const m = g.position.legalMoves().find((x) => wireOf(x) === w);
+      if (!m) return false;
+      g = g.play(m);
+    }
+    this.game = g;
+    this.animation = null;
+    this.hint = null;
+    this.outcome = null;
+    this.showResult = false;
+    this.friendJumped = 0;
+    return true;
+  }
+
+  afterRemoteMoves() {
+    if (this.game.isOver) this.#finish(); else this.#nearbyCoach();
+  }
+
+  onConnection(live) {
+    if (live) this.#nearbyCoach();
+    else {
+      this.mood = Mood.OOPS;
+      this.coachText = "Your friend's connection went quiet. Waiting for it to come back…";
+    }
+  }
+
+  onRematchDeclined() {
+    this.mood = Mood.NORMAL;
+    this.coachText = "Your friend doesn't want to play again right now. You can look at the board.";
+  }
+
+  onNewGame(iAmFirst) {
+    this.playerRed = iAmFirst;
+    this.flipped = !iAmFirst;
+    this.#resetGame();
+  }
+
+  onFriendLeft() {
+    this.mood = Mood.NORMAL;
+    this.coachText = "Your friend left the game.";
+  }
+
+  /** What the coach says in a game against a friend, after either player's move. */
+  #nearbyCoach() {
+    const pos = this.position;
+    const mine = pos.redToMove === this.playerRed;
+    this.mood = Mood.NORMAL;
+    if (!mine) {
+      this.coachText = "Your friend is thinking…";
+    } else if (this.friendJumped > 0) {
+      this.mood = Mood.OOPS;
+      this.coachText = (this.friendJumped === 1 ? "Your friend jumped your checker!" : `Your friend jumped ${this.friendJumped} of your checkers!`) +
+        (pos.captureMoves().length ? " You have a jump now. You must take it!" : "");
+    } else if (pos.captureMoves().length) {
+      this.coachText = "You have a jump! In checkers, you must take it.";
+    } else {
+      this.coachText = pick(YOUR_TURN);
+    }
   }
 
   get position() { return this.game.position; }
@@ -53,18 +151,20 @@ export class CheckersMatchController extends Controller {
   get botName() { return this.bot ? this.bot.displayName.split(" ")[0] : ""; }
 
   get isHumanTurn() {
-    return this.outcome === null && this.takeback === null && !this.thinking &&
-      (this.bot === null || this.position.redToMove === this.playerRed);
+    if (this.outcome !== null || this.takeback !== null || this.thinking) return false;
+    if (this.nearby) return this.link?.linkLive === true && !this.friendLeft && this.position.redToMove === this.playerRed;
+    return this.bot === null || this.position.redToMove === this.playerRed;
   }
 
   get canUndo() {
+    if (this.nearby) return false;
     return this.bot === null ? this.game.moves.length > 0 : this.game.moves.length >= (this.playerRed ? 1 : 2);
   }
 
   get result() {
     const o = this.outcome;
     if (!o) return null;
-    const won = o.redWins !== null && (this.bot === null || o.redWins === this.playerRed);
+    const won = o.redWins !== null && ((this.bot === null && !this.nearby) || o.redWins === this.playerRed);
     return {
       headline: this.#resultHeadline(o),
       explanation: this.#resultExplanation(o),
@@ -75,12 +175,30 @@ export class CheckersMatchController extends Controller {
 
   #greet() {
     this.mood = Mood.NORMAL;
-    if (this.bot === null) this.coachText = "Red moves first. Take turns, and remember: if you can jump, you must!";
+    if (this.nearby) {
+      this.coachText = this.playerRed
+        ? "You're playing a friend! You're Red, so you go first. Remember: if you can jump, you must!"
+        : "You're playing a friend! You're Black, so your friend goes first. Remember: if you can jump, you must!";
+    } else if (this.bot === null) this.coachText = "Red moves first. Take turns, and remember: if you can jump, you must!";
     else if (this.playerRed) this.coachText = `${this.botName} wants to play checkers! You're Red, so you go first.`;
     else this.coachText = `${this.botName} wants to play checkers! You're Black, so ${this.botName} goes first.`;
   }
 
   newGame() {
+    if (this.nearby) {
+      // Both players have to agree. The board resets when the friend says yes.
+      this.link?.askRematch();
+      this.showResult = false;
+      this.mood = Mood.NORMAL;
+      this.coachText = "I asked your friend to play again. Waiting for a yes…";
+      this.emit();
+      return;
+    }
+    this.#resetGame();
+    this.emit();
+  }
+
+  #resetGame() {
     this.botToken++; this.hintToken++;
     this.game = new CheckersGame();
     this.animation = null;
@@ -93,7 +211,6 @@ export class CheckersMatchController extends Controller {
     this.gameNumber++;
     this.#greet();
     if (this.bot && !this.playerRed) this.#scheduleBotMove(null);
-    this.emit();
   }
 
   onSelect() { this.sound.play("select"); }
@@ -111,7 +228,9 @@ export class CheckersMatchController extends Controller {
     this.hintToken++;
     const before = this.position;
     this.#apply(m, animate);
+    this.link?.sendMove(wireOf(m));
     if (this.game.isOver) this.#finish();
+    else if (this.nearby) { this.friendJumped = 0; this.#nearbyCoach(); this.emit(); }
     else if (this.bot === null) this.#friendCoach();
     else this.#scheduleBotMove(this.progress.coachTips ? [before, m] : null);
   }
@@ -277,7 +396,7 @@ export class CheckersMatchController extends Controller {
     if (o.redWins === null) {
       this.mood = Mood.NORMAL;
       this.sound.play("success");
-    } else if (this.bot === null || o.redWins === this.playerRed) {
+    } else if ((this.bot === null && !this.nearby) || o.redWins === this.playerRed) {
       this.mood = Mood.HAPPY;
       if (this.bot) this.progress.recordWin("checkers", this.bot);
       this.sound.play("win");
@@ -294,6 +413,7 @@ export class CheckersMatchController extends Controller {
 
   #resultHeadline(o) {
     if (o.redWins === null) return "It's a draw!";
+    if (this.nearby) return o.redWins === this.playerRed ? "You won!" : "Your friend won this time.";
     if (this.bot === null) return o.redWins ? "Red wins!" : "Black wins!";
     if (o.redWins === this.playerRed) return "You won!";
     return `${this.botName} won this time.`;
@@ -303,9 +423,11 @@ export class CheckersMatchController extends Controller {
     const playerWon = o.redWins !== null && o.redWins === this.playerRed;
     switch (o.reason) {
       case CheckersEndReason.NO_PIECES:
+        if (this.nearby) return playerWon ? "You captured all of your friend's checkers. Amazing!" : "Your friend captured all your checkers. Want a rematch?";
         if (this.bot === null) return "Every one of the other side's checkers was captured.";
         return playerWon ? `You captured all of ${this.botName}'s checkers. Amazing!` : `${this.botName} captured all your checkers. Want a rematch?`;
       case CheckersEndReason.NO_MOVES:
+        if (this.nearby) return playerWon ? "Your friend's checkers were trapped with no moves left!" : "Your checkers got trapped with no moves left. Want a rematch?";
         if (this.bot === null) return "The other side was trapped with no moves left.";
         return playerWon ? `${this.botName}'s checkers were trapped with no moves left!` : "Your checkers got trapped with no moves left. Want a rematch?";
       case CheckersEndReason.DRAW_QUIET: return "40 moves each went by with no jumps, so nobody wins.";

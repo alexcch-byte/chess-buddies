@@ -50,13 +50,14 @@ svg { display: block; }
 .btn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--s); }
 .btn.small { min-height: 44px; padding: 8px 14px; font-size: 16px; }
 .btn.wide { width: 100%; }
-.btn:disabled { --c: #C9C6D6; --s: #A9A6B8; cursor: default; }
 .btn.green { --c: var(--green); --s: var(--green-d); }
 .btn.orange { --c: var(--orange); --s: var(--orange-d); }
 .btn.blue { --c: var(--blue); --s: var(--blue-d); }
 .btn.red { --c: var(--red); --s: var(--red-d); }
 .btn.gold { --c: var(--gold); --s: var(--gold-d); }
 .btn.grey { --c: var(--grey); --s: var(--grey-d); }
+/* After the colors, so a disabled button looks disabled whatever its color. */
+.btn:disabled { --c: #C9C6D6; --s: #A9A6B8; cursor: default; }
 .btn-emoji { font-size: 1.15em; }
 .btn:focus-visible, .round-btn:focus-visible, .menu-card:focus-visible, .lesson-card:focus-visible, .bot-card:focus-visible,
 .chip:focus-visible, .toggle-row:focus-visible, .theme-choice:focus-visible, .switch-tab:focus-visible, .promo-choice:focus-visible {
@@ -87,8 +88,10 @@ svg { display: block; }
 .home-body { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 40px 20px 24px; overflow-y: auto; flex: 1; min-height: 0; }
 .home-settings { position: absolute; top: 12px; right: 12px; }
 @media (min-width: 700px) and (orientation: landscape) {
-  .home-body { flex-direction: row; justify-content: center; align-items: center; gap: 40px; padding: 32px; }
-  .home-body > * { flex: 1; max-width: 520px; }
+  /* Auto margins centre the two halves when there is room, and let the page scroll from the top when there isn't
+     (plain align-items: center would cut the top off a menu taller than the window). */
+  .home-body { flex-direction: row; justify-content: center; align-items: flex-start; gap: 40px; padding: 32px; }
+  .home-body > * { flex: 1; max-width: 520px; margin-block: auto; }
 }
 .hero { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .hero-art { position: relative; display: grid; place-items: center; width: 100%; min-height: 200px; }
@@ -111,6 +114,7 @@ svg { display: block; }
 .menu-card:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--s); }
 .menu-card.green { --c: var(--green); --s: var(--green-d); }
 .menu-card.orange { --c: var(--orange); --s: var(--orange-d); }
+.menu-card.blue { --c: var(--blue); --s: var(--blue-d); }
 .menu-icon { width: 60px; height: 60px; flex: none; border-radius: 50%; background: rgba(255, 255, 255, 0.25); display: grid; place-items: center; font-size: 32px; }
 .menu-icon .avatar { width: 52px; height: 52px; }
 .menu-text { flex: 1; min-width: 0; }
@@ -187,7 +191,7 @@ svg { display: block; }
 .play.match.narrow { overflow-y: auto; align-items: stretch; }
 .match-col { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; padding-bottom: 8px; }
 .match-col > .strip { width: var(--board); }
-.match-col > .coach, .match-col > .row { max-width: 720px; width: 100%; }
+.match-col > .coach, .match-col > .row, .match-col > .note, .match-col > .friend-ask { max-width: 720px; width: 100%; }
 .controls { display: flex; flex-direction: column; gap: 12px; }
 
 @keyframes starPulse { from { transform: scale(1); } to { transform: scale(1.09); } }
@@ -268,6 +272,22 @@ svg { display: block; }
 .cap { width: 22px; height: 22px; }
 .cap.small { width: 18px; height: 18px; }
 .lead { font-size: 18px; font-weight: 700; color: var(--green-d); }
+
+/* Play Nearby */
+.nearby-intro { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 18px; }
+.fine-left { color: var(--ink-soft); font-size: 15px; }
+.step { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.step-head { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 800; }
+.step-num { width: 34px; height: 34px; flex: none; border-radius: 50%; background: var(--purple); color: #fff; display: grid; place-items: center; font-size: 18px; }
+.step.done .step-num { background: var(--green); }
+.step-help { color: var(--ink-soft); }
+.code-box { width: 100%; min-height: 96px; resize: vertical; font: 500 13px/1.35 ui-monospace, Consolas, monospace; color: var(--ink); background: #F7F5FF; border: 2px solid #E2DDF5; border-radius: 14px; padding: 10px 12px; word-break: break-all; -webkit-user-select: text; user-select: text; }
+.code-box:focus-visible { outline: 4px solid var(--ink); outline-offset: 2px; }
+.waiting { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 12px; font-size: 18px; font-weight: 800; color: var(--purple); }
+.note { display: flex; align-items: center; gap: 10px; background: #FFF3C4; border-radius: 16px; padding: 10px 14px; font-weight: 700; }
+.note.bad { background: #FFECEC; color: var(--red-d); }
+.friend-ask { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: #F1ECFF; border-radius: 16px; }
+.friend-ask-text { font-size: 18px; font-weight: 800; color: var(--purple-d); }
 
 /* Dialogs */
 .overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(30, 24, 60, 0.5); padding: 16px; animation: fadeIn 0.15s ease-out; }

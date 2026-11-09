@@ -1,8 +1,10 @@
-// A chess game against a bot, or between two players sharing the device when bot is null. Port of MatchController.kt.
-import { Piece, Square, PAWN, isCapture, isEnPassant } from "../chess/position.js";
+// A chess game against a bot, or between two players sharing the device when bot is null, or against a friend in another
+// browser when `nearby` (a NearbySession) is given. Port of MatchController.kt.
+import { Piece, Square, PAWN, isCapture, isEnPassant, uci } from "../chess/position.js";
 import { Game, EndReason, Notation } from "../chess/game.js";
 import { hangingPieces, mateInOne, opponentMateThreat, explainIllegal } from "../chess/coach.js";
 import { sleep, pick } from "../ui/dom.js";
+import { NearbyMatch } from "../nearby/match-link.js";
 import { Controller, Mood } from "./base.js";
 
 const MIN_THINK_MS = 700;
@@ -27,9 +29,13 @@ const ENDGAME_TIPS = [
 ];
 
 export class ChessMatchController extends Controller {
-  constructor(bot, playerWhite, { progress, sound, ai }) {
+  constructor(bot, playerWhite, { progress, sound, ai }, nearby = null) {
     super();
     this.bot = bot;
+    this.nearby = nearby;
+    this.link = null;
+    /** The piece the friend just took from you (0 for none), for the coach to mention. */
+    this.friendCapture = 0;
     this.playerWhite = playerWhite;
     this.progress = progress;
     this.sound = sound;
@@ -53,6 +59,100 @@ export class ChessMatchController extends Controller {
     this.botMovesSinceTip = 0;
     this.#greet();
     if (bot && !playerWhite) this.#scheduleBotMove();
+    if (nearby) this.link = new NearbyMatch(nearby, this, () => this.emit());
+  }
+
+  // ---------- a friend in another browser ----------
+
+  /** Whether this player has White in a game against a friend, or null when it isn't one. */
+  get nearbySideFirst() { return this.nearby ? this.playerWhite : null; }
+  get connectionNote() {
+    if (!this.link || this.link.linkLive) return null;
+    return this.nearby.disconnected ? "The connection was lost. Go back, then invite your friend again." : "Waiting for your friend to come back…";
+  }
+  get friendRequest() { return this.link?.request ?? null; }
+  get friendLeft() { return this.link?.friendLeft === true; }
+  answerFriendRequest(yes) { this.link?.answerRequest(yes); }
+  /** Says goodbye to the friend and closes the connection. */
+  leaveNearby() { this.link?.leave(); }
+
+  // What NearbyMatch needs from a game (see nearby/match-link.js).
+  wires() { return this.game.moves.map(uci); }
+  get isOver() { return this.game.isOver; }
+
+  playRemote(wire, animate) {
+    const move = this.position.legalMoves().find((m) => uci(m) === wire);
+    if (!move) return false;
+    const before = this.position;
+    this.hintToken++;
+    this.pendingPromotion = null;
+    this.friendCapture = isCapture(move) ? (isEnPassant(move) ? PAWN : Math.abs(before.get(move.to))) : 0;
+    this.#apply(move, animate);
+    return true;
+  }
+
+  rebuild(wires) {
+    let g = new Game();
+    for (const w of wires) {
+      const m = g.position.legalMoves().find((x) => uci(x) === w);
+      if (!m) return false;
+      g = g.play(m);
+    }
+    this.game = g;
+    this.animation = null;
+    this.hint = null;
+    this.outcome = null;
+    this.showResult = false;
+    this.pendingPromotion = null;
+    this.friendCapture = 0;
+    return true;
+  }
+
+  afterRemoteMoves() {
+    if (this.game.isOver) this.#finish(); else this.#nearbyCoach();
+  }
+
+  onConnection(live) {
+    if (live) this.#nearbyCoach();
+    else {
+      this.mood = Mood.OOPS;
+      this.coachText = "Your friend's connection went quiet. Waiting for it to come back…";
+    }
+  }
+
+  onRematchDeclined() {
+    this.mood = Mood.NORMAL;
+    this.coachText = "Your friend doesn't want to play again right now. You can look at the board.";
+  }
+
+  onNewGame(iAmFirst) {
+    this.playerWhite = iAmFirst;
+    this.flipped = !iAmFirst;
+    this.#resetGame();
+  }
+
+  onFriendLeft() {
+    this.mood = Mood.NORMAL;
+    this.coachText = "Your friend left the game.";
+  }
+
+  /** What the coach says in a game against a friend, after either player's move. */
+  #nearbyCoach() {
+    const pos = this.position;
+    const mine = pos.whiteToMove === this.playerWhite;
+    this.mood = Mood.NORMAL;
+    if (pos.inCheck() && mine) {
+      this.mood = Mood.OOPS;
+      this.coachText = "Check! Your King is under attack. Protect it!";
+    } else if (pos.inCheck()) {
+      this.coachText = "Check! You are attacking your friend's King.";
+    } else if (!mine) {
+      this.coachText = "Your friend is thinking…";
+    } else if (this.friendCapture > 0) {
+      this.coachText = `Your friend captured your ${Piece.name(this.friendCapture)}!`;
+    } else {
+      this.coachText = pick(YOUR_TURN);
+    }
   }
 
   get position() { return this.game.position; }
@@ -63,18 +163,20 @@ export class ChessMatchController extends Controller {
   get botName() { return this.bot ? this.bot.displayName.split(" ")[0] : ""; }
 
   get isHumanTurn() {
-    return this.outcome === null && this.takeback === null && !this.thinking &&
-      (this.bot === null || this.position.whiteToMove === this.playerWhite);
+    if (this.outcome !== null || this.takeback !== null || this.thinking) return false;
+    if (this.nearby) return this.link?.linkLive === true && !this.friendLeft && this.position.whiteToMove === this.playerWhite;
+    return this.bot === null || this.position.whiteToMove === this.playerWhite;
   }
 
   get canUndo() {
+    if (this.nearby) return false;
     return this.bot === null ? this.game.moves.length > 0 : this.game.moves.length >= (this.playerWhite ? 1 : 2);
   }
 
   get result() {
     const o = this.outcome;
     if (!o) return null;
-    const won = o.whiteWins !== null && (this.bot === null || o.whiteWins === this.playerWhite);
+    const won = o.whiteWins !== null && ((this.bot === null && !this.nearby) || o.whiteWins === this.playerWhite);
     return {
       headline: this.#resultHeadline(o),
       explanation: this.#resultExplanation(o),
@@ -85,12 +187,30 @@ export class ChessMatchController extends Controller {
 
   #greet() {
     this.mood = Mood.NORMAL;
-    if (this.bot === null) this.coachText = "White moves first. Take turns, and have fun!";
+    if (this.nearby) {
+      this.coachText = this.playerWhite
+        ? "You're playing a friend! You have the White pieces, so you go first."
+        : "You're playing a friend! You have the Black pieces, so your friend goes first.";
+    } else if (this.bot === null) this.coachText = "White moves first. Take turns, and have fun!";
     else if (this.playerWhite) this.coachText = `${this.bot.displayName} wants to play! You have the White pieces, so you go first.`;
     else this.coachText = `${this.bot.displayName} wants to play! You have the Black pieces, so ${this.botName} goes first.`;
   }
 
   newGame() {
+    if (this.nearby) {
+      // Both players have to agree. The board resets when the friend says yes.
+      this.link?.askRematch();
+      this.showResult = false;
+      this.mood = Mood.NORMAL;
+      this.coachText = "I asked your friend to play again. Waiting for a yes…";
+      this.emit();
+      return;
+    }
+    this.#resetGame();
+    this.emit();
+  }
+
+  #resetGame() {
     this.botToken++; this.hintToken++;
     this.game = new Game();
     this.animation = null;
@@ -104,7 +224,6 @@ export class ChessMatchController extends Controller {
     this.gameNumber++;
     this.#greet();
     if (this.bot && !this.playerWhite) this.#scheduleBotMove();
-    this.emit();
   }
 
   onBoardMove(from, to, dragged) {
@@ -142,7 +261,9 @@ export class ChessMatchController extends Controller {
     this.hintToken++;
     const before = this.position;
     this.#apply(m, !dragged);
+    this.link?.sendMove(uci(m));
     if (this.game.isOver) { this.#finish(); return; }
+    if (this.nearby) { this.friendCapture = 0; this.#nearbyCoach(); this.emit(); return; }
     if (this.bot === null) { this.#friendCoach(); return; }
     if (this.progress.coachTips) {
       const warning = this.#blunderWarning(before, m, this.position);
@@ -327,7 +448,7 @@ export class ChessMatchController extends Controller {
     if (o.whiteWins === null) {
       this.mood = Mood.NORMAL;
       this.sound.play("success");
-    } else if (this.bot === null || o.whiteWins === this.playerWhite) {
+    } else if ((this.bot === null && !this.nearby) || o.whiteWins === this.playerWhite) {
       this.mood = Mood.HAPPY;
       if (this.bot) this.progress.recordWin("chess", this.bot);
       this.sound.play("win");
@@ -344,6 +465,7 @@ export class ChessMatchController extends Controller {
 
   #resultHeadline(o) {
     if (o.whiteWins === null) return "It's a draw!";
+    if (this.nearby) return o.whiteWins === this.playerWhite ? "You won!" : "Your friend won this time.";
     if (this.bot === null) return o.whiteWins ? "White wins!" : "Black wins!";
     if (o.whiteWins === this.playerWhite) return "You won!";
     return `${this.botName} won this time.`;
@@ -352,6 +474,11 @@ export class ChessMatchController extends Controller {
   #resultExplanation(o) {
     switch (o.reason) {
       case EndReason.CHECKMATE:
+        if (this.nearby) {
+          return o.whiteWins === this.playerWhite
+            ? "Checkmate! You trapped your friend's King. Amazing!"
+            : "Checkmate. Every game makes you stronger. Want to play again?";
+        }
         if (this.bot === null) return "Checkmate! The King is trapped with no way out.";
         if (o.whiteWins === this.playerWhite) return `Checkmate! You trapped ${this.botName}'s King. Amazing!`;
         return "Checkmate. Every game makes you stronger. Want to try again?";

@@ -67,6 +67,10 @@ export function homeScreen(ctx) {
         emoji: "🧑‍🤝‍🧑", title: "Play a Friend", color: "orange", subtitle: "Two players, one screen", badgeText: null,
         onClick: () => navigate({ name: "match", game, botId: null, playerFirst: true }),
       }),
+      menuCard({
+        emoji: "📡", title: "Play Nearby", color: "blue", subtitle: "A friend on another device", badgeText: null,
+        onClick: () => navigate({ name: "nearby", game }),
+      }),
       // The download page sits one level up from the web version.
       h("a", { class: "get-app", href: "../" }, h("span", { "aria-hidden": "true" }, "📲"), h("span", null, "Get the Android app")));
     root.replaceChildren(

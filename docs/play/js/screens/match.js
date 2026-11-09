@@ -36,15 +36,17 @@ function playerStrip(c, game, top) {
   const bottomIsFirst = !c.flipped;
   const first = top ? !bottomIsFirst : bottomIsFirst;
   const bot = c.bot;
-  const isBot = bot !== null && first !== c.playerFirst;
-  const name = isBot ? bot.displayName : bot !== null ? "You" : first ? c.firstSideName : c.secondSideName;
+  const nearby = c.nearbySideFirst !== null;
+  const mine = first === c.playerFirst;
+  const isBot = bot !== null && !mine;
+  const name = isBot ? bot.displayName : nearby ? (mine ? "You" : "Your friend") : bot !== null ? "You" : first ? c.firstSideName : c.secondSideName;
   const toMove = c.result === null && c.firstSideToMove === first;
   const icon = isBot
     ? animalAvatar(bot, { thinking: c.thinking, cls: "avatar strip-img" })
     : game === "chess" ? pieceIcon(Piece.make(KING, first), "icon strip-img") : checkerIcon(first ? Checker.RED : Checker.BLACK, "icon strip-img");
   let sub;
   if (isBot && c.thinking) sub = h("span", { class: "thinking" }, "Thinking", h("i", null, "."), h("i", null, "."), h("i", null, "."));
-  else if (toMove && !isBot) sub = h("span", { class: "your-turn" }, "Your turn!");
+  else if (toMove && !isBot && (!nearby || mine)) sub = h("span", { class: "your-turn" }, "Your turn!");
   else sub = h("span", null, " ");
   return h("div", { class: `strip card${toMove ? " active" : ""}` },
     h("div", { class: "strip-avatar" }, icon),
@@ -52,11 +54,18 @@ function playerStrip(c, game, top) {
     capturedRow(c, game, first));
 }
 
-export function matchScreen(ctx, { game, botId, playerFirst }) {
+export function matchScreen(ctx, { game, botId, playerFirst, nearby = null }) {
   const { progress, back } = ctx;
   const bot = botId ? botById(botId) : null;
-  const c = game === "chess" ? new ChessMatchController(bot, playerFirst, ctx) : new CheckersMatchController(bot, playerFirst, ctx);
-  const title = bot === null ? (game === "chess" ? "Chess with a Friend" : "Checkers with a Friend") : (game === "chess" ? "Chess Practice" : "Checkers Practice");
+  const c = game === "chess" ? new ChessMatchController(bot, playerFirst, ctx, nearby) : new CheckersMatchController(bot, playerFirst, ctx, nearby);
+  const isNearby = nearby !== null;
+  const title = isNearby ? (game === "chess" ? "Chess Nearby" : "Checkers Nearby")
+    : bot === null ? (game === "chess" ? "Chess with a Friend" : "Checkers with a Friend")
+      : (game === "chess" ? "Chess Practice" : "Checkers Practice");
+  // In a game on two browsers, leaving ends the game for the friend too, so ask first.
+  const leave = isNearby
+    ? () => confirmDialog({ title: "Leave this game?", message: "Your friend will be told that you left.", confirmText: "Leave", dismissText: "Stay", onConfirm: back })
+    : back;
 
   const board = new Board(game, {
     onMove: game === "chess" ? (f, t, d) => c.onBoardMove(f, t, d) : (m, a) => c.onBoardMove(m, a),
@@ -65,12 +74,25 @@ export function matchScreen(ctx, { game, botId, playerFirst }) {
   });
   const coach = createCoach({ compact: true });
   const area = h("div", { class: "play match" });
-  const root = h("div", { class: "screen" }, topBar(title, back), area);
+  const root = h("div", { class: "screen" }, topBar(title, leave), area);
 
   let wide = null;
   const stopFit = fitBoard(area, { narrowHeightRatio: 0.62, onChange: (w) => { wide = w; render(); } });
 
-  let promoClose = null, resultClose = null, confettiKey = null;
+  let promoClose = null, resultClose = null, leftClose = null, confettiKey = null;
+
+  /** "Waiting for your friend…" and "Your friend wants to play again!", shown above the game buttons. */
+  const friendNotes = () => {
+    const note = c.connectionNote, question = c.friendRequest;
+    return [
+      note ? h("div", { class: "note", role: "status" }, h("span", { "aria-hidden": "true" }, "📡"), h("span", null, note)) : null,
+      question ? h("div", { class: "friend-ask" },
+        h("div", { class: "friend-ask-text" }, question),
+        h("div", { class: "row" },
+          kidButton({ text: "Yes!", emoji: "👍", color: "green", small: true, onClick: () => c.answerFriendRequest(true) }),
+          kidButton({ text: "Not now", color: "grey", small: true, onClick: () => c.answerFriendRequest(false) }))) : null,
+    ];
+  };
 
   const takebackButtons = () => (c.takeback === null ? null : h("div", { class: "row" },
     kidButton({ text: "Take it back", emoji: "↩️", color: "orange", small: true, onClick: () => c.acceptTakeback() }),
@@ -78,12 +100,24 @@ export function matchScreen(ctx, { game, botId, playerFirst }) {
 
   const controls = () => h("div", { class: "row wrap" },
     bot ? kidButton({ text: "Hint", emoji: "💡", color: "orange", small: true, enabled: c.isHumanTurn, onClick: () => c.requestHint() }) : null,
-    kidButton({ text: "Undo", emoji: "↩️", color: "blue", small: true, enabled: c.canUndo, onClick: () => c.undo() }),
-    bot === null ? kidButton({ text: "Flip board", emoji: "🔃", color: "green", small: true, onClick: () => { c.flipped = !c.flipped; c.emit(); } }) : null,
+    !isNearby ? kidButton({ text: "Undo", emoji: "↩️", color: "blue", small: true, enabled: c.canUndo, onClick: () => c.undo() }) : null,
+    bot === null && !isNearby ? kidButton({ text: "Flip board", emoji: "🔃", color: "green", small: true, onClick: () => { c.flipped = !c.flipped; c.emit(); } }) : null,
     kidButton({
-      text: "New game", emoji: "✨", color: "purple", small: true,
-      onClick: () => confirmDialog({ title: "Start a new game?", message: "This game will end and a fresh board will be set up.", confirmText: "New game", onConfirm: () => c.newGame() }),
+      text: isNearby ? "Play again" : "New game", emoji: "✨", color: "purple", small: true,
+      onClick: () => confirmDialog(isNearby
+        ? { title: "Play again?", message: "I'll ask your friend. If they say yes, you swap colors and start a fresh board.", confirmText: "Ask my friend", onConfirm: () => c.newGame() }
+        : { title: "Start a new game?", message: "This game will end and a fresh board will be set up.", confirmText: "New game", onConfirm: () => c.newGame() }),
     }));
+
+  const showFriendLeftDialog = () => {
+    leftClose = openDialog(h("div", { class: "dialog-body" },
+      h("div", { class: "result-emoji" }, "👋"),
+      h("h2", null, "Your friend left"),
+      h("p", null, "The game is over. You can look at the board, or go home."),
+      h("div", { class: "row" },
+        kidButton({ text: "See the board", color: "blue", small: true, onClick: () => { leftClose?.(); } }),
+        kidButton({ text: "Home", color: "purple", small: true, onClick: () => { leftClose?.(); back(); } }))));
+  };
 
   const showResultDialog = () => {
     const r = c.result;
@@ -119,9 +153,9 @@ export function matchScreen(ctx, { game, botId, playerFirst }) {
       const stripTop = playerStrip(c, game, true), stripBottom = playerStrip(c, game, false);
       const boardHolder = h("div", { class: "board-holder" }, board.el);
       if (wide) {
-        area.replaceChildren(boardHolder, h("div", { class: "side" }, stripTop, coach.el, takebackButtons(), controls(), stripBottom));
+        area.replaceChildren(boardHolder, h("div", { class: "side" }, stripTop, coach.el, friendNotes(), takebackButtons(), controls(), stripBottom));
       } else {
-        area.replaceChildren(h("div", { class: "match-col" }, stripTop, boardHolder, stripBottom, coach.el, takebackButtons(), controls()));
+        area.replaceChildren(h("div", { class: "match-col" }, stripTop, boardHolder, stripBottom, coach.el, friendNotes(), takebackButtons(), controls()));
       }
     }
 
@@ -136,6 +170,8 @@ export function matchScreen(ctx, { game, botId, playerFirst }) {
     if (c.showResult && !resultClose) showResultDialog();
     else if (!c.showResult && resultClose) { resultClose(); resultClose = null; }
 
+    if (c.friendLeft && !leftClose) showFriendLeftDialog();
+
     if (c.result?.celebrate) {
       const key = String(c.gameNumber);
       if (key !== confettiKey) { confettiKey = key; confetti(); }
@@ -146,6 +182,10 @@ export function matchScreen(ctx, { game, botId, playerFirst }) {
   const unsubP = progress.subscribe(render);
   return {
     el: root,
-    destroy() { unsubC(); unsubP(); c.destroy(); board.destroy(); stopFit(); promoClose?.(); resultClose?.(); },
+    destroy() {
+      unsubC(); unsubP();
+      c.leaveNearby?.(); // leaving the screen ends a game against a friend
+      c.destroy(); board.destroy(); stopFit(); promoClose?.(); resultClose?.(); leftClose?.();
+    },
   };
 }

@@ -9,6 +9,8 @@ import { AiClient } from "./ai-client.js";
 import { homeScreen, lessonMapScreen, practiceSetupScreen, settingsScreen } from "./screens/home.js";
 import { lessonScreen } from "./screens/lesson.js";
 import { matchScreen } from "./screens/match.js";
+import { nearbyScreen } from "./screens/nearby.js";
+import { codeFromHash } from "./nearby/signal.js";
 
 const app = document.getElementById("app");
 installDefs();
@@ -24,6 +26,7 @@ const FACTORIES = {
   lesson: lessonScreen,
   practice: practiceSetupScreen,
   match: matchScreen,
+  nearby: nearbyScreen,
   settings: settingsScreen,
 };
 
@@ -73,3 +76,10 @@ window.addEventListener("popstate", (e) => {
 
 history.replaceState({ d: 0 }, "");
 show(stack[0]);
+
+// A friend's invite link (.../play/#join=CODE) lands straight on the joining step.
+const invite = codeFromHash(location.hash);
+if (invite) {
+  history.replaceState({ d: 0 }, "", location.pathname + location.search);
+  ctx.navigate({ name: "nearby", game: "chess", joinCode: invite });
+}

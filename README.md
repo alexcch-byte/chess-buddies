@@ -11,7 +11,7 @@ Sir Hops, a friendly knight, walks children through short interactive lessons an
 - **28 lessons with 96 challenges:** 21 chess lessons and 7 checkers lessons, including chess strategy (see [Lessons](#lessons)).
 - **Practice matches** against five computer opponents, from very gentle to quite strong (see [Opponents](#opponents)).
 - **Play a Friend:** two players share one screen, with a **Flip board** button.
-- **Play Nearby:** two tablets, one game, over home Wi-Fi or Bluetooth, for chess and for checkers (see [Play Nearby](#play-nearby-two-tablets)).
+- **Play Nearby:** two tablets, one game, over home Wi-Fi or Bluetooth, for chess and for checkers (see [Play Nearby](#play-nearby-two-tablets)). The browser version has it too, paired with an invite link (see [in the browser](#play-nearby-in-the-browser)).
 - **Coaching from Sir Hops:**
   - Explains in plain words why a move isn't allowed, for example "Knights move in an L shape" or "You have to jump when you can!".
   - Warns right after a risky move and offers to take it back.
@@ -66,7 +66,20 @@ How it works:
 - **Picture code:** the code never goes over the air. The host sends a random number and the guest answers with a hash of that number plus the 4 pictures. Five wrong tries within a minute switch joining off for 30 seconds. The order the pictures are tapped in does not matter.
 - **In the game:** each tablet keeps its own copy of the game and the two swap moves, numbered. A heartbeat every second notices a dropped tablet within 5 seconds; the board waits ("Waiting for your friend…") and the guest reconnects on its own. After a reconnect both tablets swap their full move lists and the one that is behind catches up (if the lists disagree, the host's wins). A move that arrives out of order makes the tablet ask for the whole list.
 - There is no Undo, Hint or Flip board in a nearby game, and wins are not counted against the computer opponents.
-- This is in the Android app only. A web page cannot open local network or Bluetooth connections, so the browser version does not have it.
+- The browser version has Play Nearby too, but pairs differently (below), so a tablet running the app and a browser can't play each other.
+
+### Play Nearby in the browser
+
+A web page can't scan the Wi-Fi or use Bluetooth, so two browsers pair by swapping two short codes (a grown-up helps), then talk directly using a WebRTC data channel. No game data goes through a server.
+
+1. One player opens **Play Nearby**, picks their colour and taps **Start a game**. The page makes an **invite link**.
+2. The friend opens that link on their device (any browser, tablet, phone or computer). It lands straight on joining and shows a **reply code**.
+3. The friend sends the reply code back, the host pastes it and taps **Connect**. The game starts.
+
+- By default both devices must be on the same Wi-Fi and nothing is contacted. **My friend is far away** also asks Google's public STUN service for each device's internet address (the moves still go straight between the two devices); it can't get through every home router.
+- The codes are the connection descriptions (SDP) deflate-compressed into URL-safe text, about 650 characters (`docs/play/js/nearby/signal.js`: `CB1` + invite/reply + same-Wi-Fi/far-away + squeezed/plain + payload). They can be pasted with other text around them.
+- The game rules are the app's `NearbySession` ported to JavaScript (`docs/play/js/nearby/session.js`): same handshake, heartbeat, move numbering, catch-up and play-again swap. Two differences: there is no picture code (the invite is the secret), and a quiet connection just pauses the game and resumes by itself. If the connection closes for good (the friend's tab was closed, say), the game ends and you invite again; there is no automatic reconnect.
+- Not checked on real devices yet: the connection has been tried between two tabs of one browser, not across two devices on a real network.
 
 ## Lessons
 
@@ -227,10 +240,10 @@ Chess Buddies also runs in a browser: <https://alexcch-byte.github.io/chess-budd
 
 ```bash
 python -m http.server 8765 --directory docs   # then open http://localhost:8765/play/
-node --test web-tests/chess.test.mjs web-tests/checkers.test.mjs web-tests/lessons.test.mjs web-tests/narrator.test.mjs
+node --test web-tests/chess.test.mjs web-tests/checkers.test.mjs web-tests/lessons.test.mjs web-tests/narrator.test.mjs web-tests/nearby.test.mjs
 ```
 
-The Node tests port the app's tests (move-generation counts, bot behaviour, and that every lesson is solvable), so the two versions are held to the same standard.
+The Node tests port the app's tests (move-generation counts, bot behaviour, and that every lesson is solvable), so the two versions are held to the same standard. `nearby.test.mjs` runs the web Play Nearby session over in-memory links (a port of the app's session tests), checks the invite codes, and plays whole chess and checkers games through the real controllers on both sides. The WebRTC connection itself needs a real browser and isn't covered there.
 
 ## Project layout
 
